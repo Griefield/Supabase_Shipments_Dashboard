@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sea Door Shipments Dashboard</title>
+<style>
+  :root { --bg:#f8fafc; --muted:#64748b; --card:#ffffff; --accent:#0f172a; --ok:#10b981; --warn:#f59e0b; --err:#ef4444; --border:#e2e8f0; --chart:#2563eb; }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; background:var(--bg); color:var(--accent); line-height:1.5; padding:0 1rem 2rem}
+  a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
+  header{padding:1rem 1.5rem; background:var(--card); margin:1rem 0 1rem; border-radius:8px; box-shadow:0 1px 2px rgba(0,0,0,.05)}
+  .header-title{font-size:1.25rem; font-weight:600; display:flex;align-items:center;gap:.5rem}
+  .sub{font-size:.85rem; color:var(--muted); display:flex; align-items:center; gap:.4rem}
+  /* Tabs */
+  .tabs{display:flex; flex-wrap:wrap; gap:.25rem; border-bottom:2px solid var(--border); margin-bottom:1rem}
+  .tab{padding:.6rem 1.1rem; border:1px solid transparent; border-bottom:none; border-radius:8px 8px 0 0; background:transparent; color:var(--muted); font-size:.9rem; font-weight:500; cursor:pointer; position:relative; top:2px}
+  .tab:hover{background:#eef2f7; color:var(--accent)}
+  .tab.active{background:var(--card); border-color:var(--border); color:var(--accent); font-weight:600}
+  .tab .count{font-size:.7rem; color:var(--muted); margin-left:.35rem}
+  /* KPI */
+  .kpi-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1rem; margin-bottom:1.25rem}
+  .kpi-card{background:var(--card); border:1px solid var(--border); border-radius:8px; padding:1rem; text-align:center; min-height:80px; display:flex;flex-direction:column;justify-content:center}
+  .kpi-label{font-size:.75rem; color:var(--muted); text-transform:uppercase; letter-spacing:.05em}
+  .kpi-value{font-size:1.4rem; font-weight:600; margin-top:.25rem}
+  /* Bars */
+  .bar{background:var(--card); border:1px solid var(--border); border-radius:8px; padding:.75rem 1rem; margin-bottom:1rem; display:grid;grid-template-columns:1fr auto auto;gap:1rem;align-items:center}
+  .bar.single{grid-template-columns:1fr auto}
+  .input{width:100%;padding:.6rem .8rem; border:1px solid var(--border); border-radius:6px; font-size:.9rem}
+  .select{padding:.6rem .8rem; border:1px solid var(--border); border-radius:6px; background:#fff; cursor:pointer; max-width:240px}
+  .btn{padding:.6rem 1rem; background:var(--accent); color:#fff; border:none; border-radius:6px; font-size:.9rem; cursor:pointer; white-space:nowrap}
+  .btn:hover{background:#1e293b}
+  .hint{font-size:.8rem; color:var(--muted); white-space:nowrap}
+  /* Table */
+  .table-wrap{background:var(--card); border:1px solid var(--border); border-radius:8px; overflow-x:auto}
+  table{width:100%; border-collapse:collapse; font-size:.85rem; white-space:nowrap}
+  th,td{padding:.5rem .75rem; border-bottom:1px solid var(--border); text-align:left}
+  th{background:#f7f9fc; color:var(--muted); font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; position:sticky; top:0}
+  tr:nth-child(even){background:rgba(0,0,0,.015)}
+  tbody tr:hover{background:#eef4ff}
+  .badge{display:inline-block; padding:.12rem .4rem; background:#e2e8f0; border-radius:4px; font-size:.75rem; font-weight:500}
+  .route{font-variant-numeric:tabular-nums}
+  /* Pagination */
+  .pagination{padding:.5rem 1rem; background:var(--card); display:flex; gap:.35rem; justify-content:center; align-items:center; flex-wrap:wrap; border:1px solid var(--border); border-top:none; border-radius:0 0 8px 8px}
+  .page-btn{padding:.35rem .7rem; background:#fff; border:1px solid var(--border); border-radius:4px; cursor:pointer; font-size:.85rem}
+  .page-btn.active{background:var(--accent); color:#fff}
+  /* Charts */
+  .charts{display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:1rem; margin-top:1.5rem}
+  .chart-card{background:var(--card); border:1px solid var(--border); border-radius:8px; padding:1rem}
+  .chart-card h3{font-size:.85rem; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:.75rem; font-weight:600}
+  canvas{width:100%; height:260px}
+  .hidden{display:none}
+  .empty{padding:2rem; text-align:center; color:var(--muted)}
+</style>
+
+<body>
+  <header>
+    <div class="header-title">
+      <span>Sea Door Shipments</span>
+      <button class="btn" id="refreshBtn">Refresh</button>
+      <span class="sub" style="margin-left:auto">Last updated: <span id="lastUpdated">—</span></span>
+    </div>
+  </header>
+
+  <nav class="tabs" id="tabs"></nav>
+
+  <!-- ── Shipments panel ── -->
+  <section id="panel-shipments">
+    <div class="kpi-strip">
+      <div class="kpi-card"><div class="kpi-label">Total Shipments</div><div class="kpi-value" id="kpiTotal">—</div></div>
+      <div class="kpi-card"><div class="kpi-label">Total Load (T)</div><div class="kpi-value" id="kpiLoad">—</div></div>
+      <div class="kpi-card"><div class="kpi-label">Total Cost</div><div class="kpi-value" id="kpiCost">—</div></div>
+      <div class="kpi-card"><div class="kpi-label">Avg Distance (nm)</div><div class="kpi-value" id="kpiAvg">—</div></div>
+    </div>
+
+    <div class="bar">
+      <input class="input" type="text" id="searchInput" placeholder="Search… (ID, client, company, vessel, port)" />
+      <select class="select" id="clientFilter"><option value="">All clients</option></select>
+      <button class="btn" id="applyFilter">Apply</button>
+    </div>
+
+    <div class="table-wrap">
+      <table id="shipmentsTable">
+        <thead>
+          <tr>
+            <th>#</th><th>Shipment ID</th><th>Date</th><th>Client</th>
+            <th>Vessel</th><th>Route</th><th>Load (T)</th><th>Cost</th><th>Dist (nm)</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <div class="pagination" id="pagination"></div>
+    </div>
+
+    <div class="charts">
+      <div class="chart-card"><h3>Cost &amp; Load by Client</h3><canvas id="chartClient"></canvas></div>
+      <div class="chart-card"><h3>Volume by Month</h3><canvas id="chartMonth"></canvas></div>
+    </div>
+  </section>
+
+  <!-- ── Generic dimension panel (reused for the 5 dim tables) ── -->
+  <section id="panel-generic" class="hidden">
+    <div class="bar single">
+      <input class="input" type="text" id="gSearch" placeholder="Search…" />
+      <span class="hint" id="gCount"></span>
+    </div>
+    <div class="table-wrap">
+      <table id="gTable"><thead></thead><tbody></tbody></table>
+      <div class="pagination" id="gPagination"></div>
+    </div>
+  </section>
+
+  <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <script>
+    // Poll until the Supabase UMD bundle has attached itself to window
+    function pollSupa(cb) {
+      if (window.supabase) { cb(); } else { setTimeout(() => pollSupa(cb), 50); }
+    }
+
+    pollSupa(function () {
+      const SUPABASE_URL = window.SUPABASE_URL || 'https://qagckjwgwavcimdiwkwz.supabase.co';
+      const SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY || 'sb_publishable_tPZKzW69UZW82-9CAVvDrg_KA_2c95s';
+      const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+      const PAGE_SIZE = 25;      // rows shown per page in the UI
+      const FETCH_PAGE = 1000;   // Supabase caps a single response at 1000 rows
+
+      // ── tab definitions: one per table
+      const TABS = [
+        { id: 'shipments', label: 'Shipments', table: 'Shipments' },
+        { id: 'clients',   label: 'Clients',   table: 'ClientDIM',  cols: ['ClientID','Client_Name','Client_Company','Client_Address'] },
+        { id: 'companies', label: 'Companies', table: 'CompanyDIM', cols: ['CompanyID','Company_Name','Home_Country','Company_CEO'] },
+        { id: 'ports',     label: 'Ports',     table: 'PortDIM',    cols: ['PortID','Port_Name','Port_Address','Port_Contact'] },
+        { id: 'ships',     label: 'Ships',     table: 'ShipsDIM',   cols: ['ShipID','Vessel_Name','Ship_Country_Register','Ship_IMO_No.','Vessel_Load_Capacity_tonnes'] },
+        { id: 'time',      label: 'Time',      table: 'TimeDIM',    cols: ['TimeID','Date','Day_of_Week','Departure','Arrival'] }
+      ];
+
+      // friendly column headers
+      const LABELS = {
+        ClientID:'ID', Client_Name:'Name', Client_Company:'Company', Client_Address:'Address',
+        CompanyID:'ID', Company_Name:'Company', Home_Country:'Country', Company_CEO:'CEO',
+        PortID:'ID', Port_Name:'Port', Port_Address:'Address', Port_Contact:'Contact',
+        ShipID:'ID', Vessel_Name:'Vessel', Ship_Country_Register:'Register',
+        'Ship_IMO_No.':'IMO No.', Vessel_Load_Capacity_tonnes:'Capacity (t)',
+        TimeID:'ID', Date:'Date', Day_of_Week:'Day', Departure:'Departure', Arrival:'Arrival'
+      };
+
+      // ── state
+      const data = {};                                             // table -> rows
+      const view = {};                                             // tab -> {page, q}
+      TABS.forEach(t => { view[t.id] = { page: 1, q: '' }; });
+      let activeTab = 'shipments';
+      let chartClient = null, chartMonth = null;
+
+      // ── DOM
+      const tabsEl = document.getElementById('tabs');
+      const panelShipments = document.getElementById('panel-shipments');
+      const panelGeneric = document.getElementById('panel-generic');
+      const lastUpdated = document.getElementById('lastUpdated');
+      const clientFilter = document.getElementById('clientFilter');
+      const searchInput = document.getElementById('searchInput');
+
+      // ── fetch every row of a table, paginating past the 1000-row cap
+      async function fetchAll(table) {
+        let out = [];
+        for (let from = 0; ; from += FETCH_PAGE) {
+          const { data: rows, error } = await supa
+            .from(table).select('*').range(from, from + FETCH_PAGE - 1);
+          if (error) throw error;
+          if (!rows || rows.length === 0) break;
+          out = out.concat(rows);
+          if (rows.length < FETCH_PAGE) break;
+        }
+        return out;
+      }
+
+      async function loadAll() {
+        try {
+          const results = await Promise.all(TABS.map(t => fetchAll(t.table)));
+          TABS.forEach((t, i) => { data[t.id] = results[i]; });
+          lastUpdated.textContent = new Date().toLocaleTimeString();
+          populateClients();
+          renderTabs();
+          renderActive();
+        } catch (err) {
+          console.error('Supabase load error:', err);
+          document.querySelector('#shipmentsTable tbody').innerHTML =
+            '<tr><td colspan="9">Error loading data — check the browser console</td></tr>';
+        }
+      }
+
+      // ── tab bar
+      function renderTabs() {
+        tabsEl.innerHTML = '';
+        TABS.forEach(t => {
+          const b = document.createElement('button');
+          b.className = 'tab' + (t.id === activeTab ? ' active' : '');
+          b.innerHTML = `${t.label}<span class="count">${(data[t.id] || []).length}</span>`;
+          b.onclick = () => {
+            activeTab = t.id;
+            renderTabs();
+            renderActive();
+          };
+          tabsEl.appendChild(b);
+        });
+      }
+
+      function renderActive() {
+        const isShipments = activeTab === 'shipments';
+        panelShipments.classList.toggle('hidden', !isShipments);
+        panelGeneric.classList.toggle('hidden', isShipments);
+        if (isShipments) renderShipments(); else renderGeneric(activeTab);
+      }
+
+      // ── client dropdown (once)
+      function populateClients() {
+        const current = clientFilter.value;
+        const names = (data.clients || [])
+          .filter(c => c.Client_Name)
+          .sort((a, b) => a.Client_Name.localeCompare(b.Client_Name));
+        clientFilter.innerHTML = '<option value="">All clients</option>';
+        names.forEach(c => {
+          const o = document.createElement('option');
+          o.value = c.ClientID;
+          o.textContent = c.Client_Name;
+          clientFilter.appendChild(o);
+        });
+        clientFilter.value = current;
+      }
+
+      // ── fast lookups for the star-schema joins
+      function indexBy(rows, key) {
+        const m = new Map();
+        (rows || []).forEach(r => m.set(r[key], r));
+        return m;
+      }
+
+      function joinedShipments() {
+        const clientBy = indexBy(data.clients, 'ClientID');
+        const shipBy   = indexBy(data.ships, 'ShipID');
+        const portBy   = indexBy(data.ports, 'PortID');
+        const timeBy   = indexBy(data.time, 'TimeID');
+
+        return (data.shipments || []).map(s => {
+          const c = clientBy.get(s.ClientID);
+          const v = shipBy.get(s.ShipID);
+          const dep = portBy.get(s.PortDeparture);
+          const arr = portBy.get(s.PortArrival);
+          const t = timeBy.get(s.TimeID);
+          return {
+            ...s,
+            date: t ? t.Date : '',
+            clientName: c ? c.Client_Name : `ClientID ${s.ClientID}`,
+            clientCompany: c ? c.Client_Company : '',
+            vessel: v ? v.Vessel_Name : `ShipID ${s.ShipID}`,
+            portFrom: dep ? dep.Port_Name : `PortID ${s.PortDeparture}`,
+            portTo: arr ? arr.Port_Name : `PortID ${s.PortArrival}`
+          };
+        }).filter(s => s.ShipmentID != null);
+      }
+
+      // ── Shipments tab
+      function renderShipments() {
+        let rows = joinedShipments();
+
+        // KPIs (always over the whole dataset, not the filtered slice)
+        const total = rows.length;
+        document.getElementById('kpiTotal').textContent = total.toLocaleString();
+        const sum = (arr, f) => arr.reduce((a, x) => a + (f(x) || 0), 0);
+        document.getElementById('kpiLoad').textContent = total ? Math.round(sum(rows, r => r.ShipmentLoad_Tonnes)).toLocaleString() : '—';
+        document.getElementById('kpiCost').textContent = total ? Math.round(sum(rows, r => r.ShipmentTotalCost)).toLocaleString() : '—';
+        document.getElementById('kpiAvg').textContent  = total ? Math.round(sum(rows, r => r.DistanceTravelled_Nautical_Miles) / total).toLocaleString() : '—';
+
+        // filters
+        const q = searchInput.value.trim().toLowerCase();
+        if (q) {
+          rows = rows.filter(r =>
+            String(r.ShipmentID).includes(q) ||
+            (r.clientName || '').toLowerCase().includes(q) ||
+            (r.clientCompany || '').toLowerCase().includes(q) ||
+            (r.vessel || '').toLowerCase().includes(q) ||
+            (r.portFrom || '').toLowerCase().includes(q) ||
+            (r.portTo || '').toLowerCase().includes(q)
+          );
+        }
+        if (clientFilter.value) rows = rows.filter(r => String(r.ClientID) === clientFilter.value);
+
+        // table
+        const p = view.shipments;
+        const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+        if (p.page > totalPages) p.page = totalPages;
+        const slice = rows.slice((p.page - 1) * PAGE_SIZE, p.page * PAGE_SIZE);
+
+        const tbody = document.querySelector('#shipmentsTable tbody');
+        tbody.innerHTML = slice.length
+          ? slice.map((r, i) => `
+              <tr>
+                <td>${(p.page - 1) * PAGE_SIZE + i + 1}</td>
+                <td>${r.ShipmentID}</td>
+                <td>${r.date || '—'}</td>
+                <td><span class="badge">${r.clientName}</span></td>
+                <td>${r.vessel}</td>
+                <td class="route">${r.portFrom} → ${r.portTo}</td>
+                <td>${Number(r.ShipmentLoad_Tonnes || 0).toLocaleString()}</td>
+                <td>${Number(r.ShipmentTotalCost || 0).toLocaleString()}</td>
+                <td>${Number(r.DistanceTravelled_Nautical_Miles || 0).toLocaleString()}</td>
+              </tr>`).join('')
+          : '<tr><td colspan="9" class="empty">No rows match your filters.</td></tr>';
+
+        renderPager('pagination', p.page, totalPages, (n) => { view.shipments.page = n; renderShipments(); }, rows.length, slice.length);
+
+        drawClientChart(rows);
+        drawMonthChart(rows);
+      }
+
+      // ── chart: cost & load by client (top 8)
+      function drawClientChart(rows) {
+        const agg = {};
+        rows.forEach(r => {
+          const k = r.clientName;
+          if (!agg[k]) agg[k] = { cost: 0, load: 0 };
+          agg[k].cost += r.ShipmentTotalCost || 0;
+          agg[k].load += r.ShipmentLoad_Tonnes || 0;
+        });
+        const labels = Object.keys(agg).sort((a, b) => agg[b].cost - agg[a].cost).slice(0, 8);
+
+        if (chartClient) chartClient.destroy();
+        chartClient = new Chart(document.getElementById('chartClient'), {
+          type: 'bar',
+          data: {
+            labels,
+            datasets: [
+              { label: 'Cost (US$)', data: labels.map(l => Math.round(agg[l].cost)), backgroundColor: 'rgba(37,99,235,.65)', yAxisID: 'y' },
+              { label: 'Load (T)',   data: labels.map(l => Math.round(agg[l].load)), backgroundColor: 'rgba(16,185,129,.65)', yAxisID: 'y1' }
+            ]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            scales: {
+              y:  { beginAtZero: true, position: 'left',  title: { display: true, text: 'Cost' } },
+              y1: { beginAtZero: true, position: 'right', title: { display: true, text: 'Load (T)' }, grid: { drawOnChartArea: false } }
+            }
+          }
+        });
+      }
+
+      // ── chart: shipment volume by month
+      function drawMonthChart(rows) {
+        const agg = {};
+        rows.forEach(r => {
+          const m = (r.date || '').slice(0, 7);
+          if (!m) return;
+          agg[m] = (agg[m] || 0) + 1;
+        });
+        const labels = Object.keys(agg).sort();
+
+        if (chartMonth) chartMonth.destroy();
+        chartMonth = new Chart(document.getElementById('chartMonth'), {
+          type: 'line',
+          data: {
+            labels,
+            datasets: [{ label: 'Shipments', data: labels.map(l => agg[l]), borderColor: '#2563eb', backgroundColor: 'rgba(37,99,235,.15)', fill: true, tension: .3 }]
+          },
+          options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
+        });
+      }
+
+      // ── generic dim tab
+      function renderGeneric(tabId) {
+        const tab = TABS.find(t => t.id === tabId);
+        const rowsAll = data[tabId] || [];
+        const p = view[tabId];
+
+        let rows = rowsAll;
+        const q = (p.q || '').trim().toLowerCase();
+        if (q) {
+          rows = rows.filter(r => tab.cols.some(c => String(r[c] ?? '').toLowerCase().includes(q)));
+        }
+
+        document.getElementById('gSearch').value = p.q || '';
+        document.getElementById('gSearch').placeholder = `Search ${tab.label.toLowerCase()}…`;
+        document.getElementById('gCount').textContent = `${rows.length.toLocaleString()} of ${rowsAll.length.toLocaleString()} rows`;
+
+        const thead = document.querySelector('#gTable thead');
+        const tbody = document.querySelector('#gTable tbody');
+        thead.innerHTML = '<tr><th>#</th>' + tab.cols.map(c => `<th>${LABELS[c] || c}</th>`).join('') + '</tr>';
+
+        const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+        if (p.page > totalPages) p.page = totalPages;
+        const slice = rows.slice((p.page - 1) * PAGE_SIZE, p.page * PAGE_SIZE);
+
+        tbody.innerHTML = slice.length
+          ? slice.map((r, i) =>
+              '<tr><td>' + ((p.page - 1) * PAGE_SIZE + i + 1) + '</td>' +
+              tab.cols.map(c => `<td>${r[c] ?? '—'}</td>`).join('') + '</tr>').join('')
+          : `<tr><td colspan="${tab.cols.length + 1}" class="empty">No rows match your search.</td></tr>`;
+
+        renderPager('gPagination', p.page, totalPages, (n) => { view[tabId].page = n; renderGeneric(tabId); }, rows.length, slice.length);
+      }
+
+      // ── shared pager
+      function renderPager(elId, page, totalPages, go, totalRows, shownRows) {
+        const el = document.getElementById(elId);
+        el.innerHTML = '';
+        const first = totalRows === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+        const last = (page - 1) * PAGE_SIZE + shownRows;
+
+        const info = document.createElement('span');
+        info.className = 'hint';
+        info.textContent = `${first}–${last} of ${totalRows.toLocaleString()}`;
+        el.appendChild(info);
+
+        const mk = (label, target, disabled, active) => {
+          const b = document.createElement('span');
+          b.className = 'page-btn' + (active ? ' active' : '');
+          b.textContent = label;
+          if (!disabled && !active) b.onclick = () => go(target);
+          if (disabled) b.style.opacity = .4;
+          el.appendChild(b);
+        };
+
+        mk('‹ Prev', page - 1, page <= 1, false);
+        const win = 5;
+        let start = Math.max(1, page - Math.floor(win / 2));
+        let end = Math.min(totalPages, start + win - 1);
+        start = Math.max(1, end - win + 1);
+        for (let n = start; n <= end; n++) mk(String(n), n, false, n === page);
+        mk('Next ›', page + 1, page >= totalPages, false);
+      }
+
+      // ── events
+      document.getElementById('refreshBtn').addEventListener('click', loadAll);
+      searchInput.addEventListener('input', () => { view.shipments.page = 1; renderShipments(); });
+      document.getElementById('applyFilter').addEventListener('click', () => { view.shipments.page = 1; renderShipments(); });
+      clientFilter.addEventListener('change', () => { view.shipments.page = 1; renderShipments(); });
+      document.getElementById('gSearch').addEventListener('input', (e) => {
+        view[activeTab].q = e.target.value;
+        view[activeTab].page = 1;
+        renderGeneric(activeTab);
+      });
+
+      loadAll();
+    });
+  </script>
+</body>
+</html>

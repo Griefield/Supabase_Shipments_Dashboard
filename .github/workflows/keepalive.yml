@@ -1,0 +1,26 @@
+# Free Supabase projects pause after ~7 days without database activity, and a
+# paused project leaves the published dashboard showing an error until someone
+# clicks "Resume" in the Supabase dashboard. This job makes a real SELECT every
+# 2 days so that never happens. @see https://supabase.com/docs/guides/platform/project-pausing
+name: keepalive
+on:
+  schedule:
+    - cron: '0 6 */2 * *' # every 2 days at 06:00 UTC; GitHub cron is best-effort, the 2-day gap leaves margin
+  workflow_dispatch: # lets you trigger it by hand from the Actions tab
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    env:
+      # Same publishable key already visible in index.html — not a secret.
+      SUPABASE_URL: https://qagckjwgwavcimdiwkwz.supabase.co
+      SUPABASE_ANON_KEY: sb_publishable_tPZKzW69UZW82-9CAVvDrg_KA_2c95s
+    steps:
+      - name: Query the database
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' \
+            "$SUPABASE_URL/rest/v1/Shipments?select=*&limit=1" \
+            -H "apikey: $SUPABASE_ANON_KEY")
+          echo "HTTP $code"
+          # Fail loudly if the project is paused or the key stops working, so
+          # GitHub emails you instead of your visitors finding out first.
+          [ "$code" = "200" ] || exit 1

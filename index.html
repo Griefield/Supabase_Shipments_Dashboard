@@ -52,6 +52,26 @@
   canvas{width:100%; height:100%}
   .hidden{display:none}
   .empty{padding:2rem; text-align:center; color:var(--muted)}
+  /* ── phone layout ── */
+  @media (max-width:640px){
+    body{padding:0 .5rem 1.5rem}
+    header{padding:.75rem 1rem; margin:.5rem 0 .75rem}
+    .header-title{font-size:1.05rem; flex-wrap:wrap; row-gap:.25rem}
+    /* overrides the inline margin-left:auto on the "Last updated" span */
+    .header-title .sub{margin-left:0 !important; flex-basis:100%}
+    .tabs{flex-wrap:nowrap; overflow-x:auto; margin-bottom:.75rem}
+    .tab{padding:.5rem .75rem; font-size:.85rem; top:1px; white-space:nowrap}
+    .kpi-strip{grid-template-columns:repeat(2,1fr); gap:.5rem; margin-bottom:1rem}
+    .kpi-card{padding:.75rem; min-height:64px}
+    .kpi-value{font-size:1.2rem}
+    .bar{grid-template-columns:1fr; gap:.5rem}
+    .select{max-width:none}
+    .charts{grid-template-columns:1fr; margin-top:1rem}
+    .chart-box{height:240px}
+    table{font-size:.8rem}
+    th,td{padding:.45rem .5rem}
+    .hint{white-space:normal}
+  }
 </style>
 
 <body>

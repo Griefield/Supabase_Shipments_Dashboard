@@ -31,7 +31,7 @@
   .btn:hover{background:#1e293b}
   .hint{font-size:.8rem; color:var(--muted); white-space:nowrap}
   /* Table */
-  .table-wrap{background:var(--card); border:1px solid var(--border); border-radius:8px; overflow-x:auto}
+  .table-wrap{background:var(--card); border:1px solid var(--border); border-radius:8px 8px 0 0; overflow-x:auto}
   table{width:100%; border-collapse:collapse; font-size:.85rem; white-space:nowrap}
   th,td{padding:.5rem .75rem; border-bottom:1px solid var(--border); text-align:left}
   th{background:#f7f9fc; color:var(--muted); font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; position:sticky; top:0}
@@ -40,7 +40,7 @@
   .badge{display:inline-block; padding:.12rem .4rem; background:#e2e8f0; border-radius:4px; font-size:.75rem; font-weight:500}
   .route{font-variant-numeric:tabular-nums}
   /* Pagination */
-  .pagination{padding:.5rem 1rem; background:var(--card); display:flex; gap:.35rem; justify-content:center; align-items:center; flex-wrap:wrap; border:1px solid var(--border); border-top:none; border-radius:0 0 8px 8px}
+  .pagination{padding:.5rem 1rem; background:var(--card); display:flex; gap:.35rem; justify-content:center; align-items:center; flex-wrap:wrap; border:1px solid var(--border); border-top:none; border-radius:0 0 8px 8px; position:sticky; bottom:0; z-index:2}
   .page-btn{padding:.35rem .7rem; background:#fff; border:1px solid var(--border); border-radius:4px; cursor:pointer; font-size:.85rem}
   .page-btn.active{background:var(--accent); color:#fff}
   /* Charts */
@@ -100,16 +100,18 @@
       <button class="btn" id="applyFilter">Apply</button>
     </div>
 
-    <div class="table-wrap">
-      <table id="shipmentsTable">
-        <thead>
-          <tr>
-            <th>#</th><th>Shipment ID</th><th>Date</th><th>Client</th><th>Company</th>
-            <th>Vessel</th><th>Route</th><th>Load (T)</th><th>Cost</th><th>Dist (nm)</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
+    <div class="table-card">
+      <div class="table-wrap">
+        <table id="shipmentsTable">
+          <thead>
+            <tr>
+              <th>#</th><th>Shipment ID</th><th>Date</th><th>Client</th><th>Company</th>
+              <th>Vessel</th><th>Route</th><th>Load (T)</th><th>Cost</th><th>Dist (nm)</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
       <div class="pagination" id="pagination"></div>
     </div>
 
@@ -126,8 +128,10 @@
       <input class="input" type="text" id="gSearch" placeholder="Search…" />
       <span class="hint" id="gCount"></span>
     </div>
-    <div class="table-wrap">
-      <table id="gTable"><thead></thead><tbody></tbody></table>
+    <div class="table-card">
+      <div class="table-wrap">
+        <table id="gTable"><thead></thead><tbody></tbody></table>
+      </div>
       <div class="pagination" id="gPagination"></div>
     </div>
     <div class="charts hidden" id="gCharts">

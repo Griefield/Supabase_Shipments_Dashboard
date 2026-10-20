@@ -45,9 +45,11 @@
   .page-btn.active{background:var(--accent); color:#fff}
   /* Charts */
   .charts{display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:1rem; margin-top:1.5rem}
-  .chart-card{background:var(--card); border:1px solid var(--border); border-radius:8px; padding:1rem}
+  .chart-card{background:var(--card); border:1px solid var(--border); border-radius:8px; padding:1rem; min-width:0}
   .chart-card h3{font-size:.85rem; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:.75rem; font-weight:600}
-  canvas{width:100%; height:260px}
+  /* fixed-height box so Chart.js measures a stable parent (no runaway growth) */
+  .chart-box{position:relative; height:260px}
+  canvas{width:100%; height:100%}
   .hidden{display:none}
   .empty{padding:2rem; text-align:center; color:var(--muted)}
 </style>
@@ -82,7 +84,7 @@
       <table id="shipmentsTable">
         <thead>
           <tr>
-            <th>#</th><th>Shipment ID</th><th>Date</th><th>Client</th>
+            <th>#</th><th>Shipment ID</th><th>Date</th><th>Client</th><th>Company</th>
             <th>Vessel</th><th>Route</th><th>Load (T)</th><th>Cost</th><th>Dist (nm)</th>
           </tr>
         </thead>
@@ -92,8 +94,9 @@
     </div>
 
     <div class="charts">
-      <div class="chart-card"><h3>Cost &amp; Load by Client</h3><canvas id="chartClient"></canvas></div>
-      <div class="chart-card"><h3>Volume by Month</h3><canvas id="chartMonth"></canvas></div>
+      <div class="chart-card"><h3>Cost &amp; Load by Client</h3><div class="chart-box"><canvas id="chartClient"></canvas></div></div>
+      <div class="chart-card"><h3>Volume by Month</h3><div class="chart-box"><canvas id="chartMonth"></canvas></div></div>
+      <div class="chart-card"><h3>Shipments Over Time (Daily)</h3><div class="chart-box"><canvas id="chartDaily"></canvas></div></div>
     </div>
   </section>
 
@@ -106,6 +109,9 @@
     <div class="table-wrap">
       <table id="gTable"><thead></thead><tbody></tbody></table>
       <div class="pagination" id="gPagination"></div>
+    </div>
+    <div class="charts hidden" id="gCharts">
+      <div class="chart-card"><h3 id="gChartTitle"></h3><div class="chart-box"><canvas id="gChart"></canvas></div></div>
     </div>
   </section>
 
@@ -150,7 +156,7 @@
       const view = {};                                             // tab -> {page, q}
       TABS.forEach(t => { view[t.id] = { page: 1, q: '' }; });
       let activeTab = 'shipments';
-      let chartClient = null, chartMonth = null;
+      let chartClient = null, chartMonth = null, chartDaily = null, chartDim = null;
 
       // ── DOM
       const tabsEl = document.getElementById('tabs');
@@ -185,7 +191,7 @@
         } catch (err) {
           console.error('Supabase load error:', err);
           document.querySelector('#shipmentsTable tbody').innerHTML =
-            '<tr><td colspan="9">Error loading data — check the browser console</td></tr>';
+            '<tr><td colspan="10">Error loading data — check the browser console</td></tr>';
         }
       }
 
@@ -236,10 +242,11 @@
       }
 
       function joinedShipments() {
-        const clientBy = indexBy(data.clients, 'ClientID');
-        const shipBy   = indexBy(data.ships, 'ShipID');
-        const portBy   = indexBy(data.ports, 'PortID');
-        const timeBy   = indexBy(data.time, 'TimeID');
+        const clientBy  = indexBy(data.clients, 'ClientID');
+        const shipBy    = indexBy(data.ships, 'ShipID');
+        const portBy    = indexBy(data.ports, 'PortID');
+        const timeBy    = indexBy(data.time, 'TimeID');
+        const companyBy = indexBy(data.companies, 'CompanyID');
 
         return (data.shipments || []).map(s => {
           const c = clientBy.get(s.ClientID);
@@ -247,11 +254,13 @@
           const dep = portBy.get(s.PortDeparture);
           const arr = portBy.get(s.PortArrival);
           const t = timeBy.get(s.TimeID);
+          const co = companyBy.get(s.CompanyID);
           return {
             ...s,
             date: t ? t.Date : '',
             clientName: c ? c.Client_Name : `ClientID ${s.ClientID}`,
             clientCompany: c ? c.Client_Company : '',
+            companyName: co ? co.Company_Name : `CompanyID ${s.CompanyID}`,
             vessel: v ? v.Vessel_Name : `ShipID ${s.ShipID}`,
             portFrom: dep ? dep.Port_Name : `PortID ${s.PortDeparture}`,
             portTo: arr ? arr.Port_Name : `PortID ${s.PortArrival}`
@@ -299,18 +308,20 @@
                 <td>${r.ShipmentID}</td>
                 <td>${r.date || '—'}</td>
                 <td><span class="badge">${r.clientName}</span></td>
+                <td>${r.companyName}</td>
                 <td>${r.vessel}</td>
                 <td class="route">${r.portFrom} → ${r.portTo}</td>
                 <td>${Number(r.ShipmentLoad_Tonnes || 0).toLocaleString()}</td>
                 <td>${Number(r.ShipmentTotalCost || 0).toLocaleString()}</td>
                 <td>${Number(r.DistanceTravelled_Nautical_Miles || 0).toLocaleString()}</td>
               </tr>`).join('')
-          : '<tr><td colspan="9" class="empty">No rows match your filters.</td></tr>';
+          : '<tr><td colspan="10" class="empty">No rows match your filters.</td></tr>';
 
         renderPager('pagination', p.page, totalPages, (n) => { view.shipments.page = n; renderShipments(); }, rows.length, slice.length);
 
         drawClientChart(rows);
         drawMonthChart(rows);
+        drawDailyChart(rows);
       }
 
       // ── chart: cost & load by client (top 8)
@@ -365,6 +376,65 @@
         });
       }
 
+      // ── chart: shipments per day
+      function drawDailyChart(rows) {
+        const agg = {};
+        rows.forEach(r => { if (r.date) agg[r.date] = (agg[r.date] || 0) + 1; });
+        const labels = Object.keys(agg).sort();
+
+        if (chartDaily) chartDaily.destroy();
+        chartDaily = new Chart(document.getElementById('chartDaily'), {
+          type: 'line',
+          data: {
+            labels,
+            datasets: [{ label: 'Shipments', data: labels.map(l => agg[l]), borderColor: '#0f172a', backgroundColor: 'rgba(15,23,42,.1)', fill: true, tension: .3, pointRadius: 2 }]
+          },
+          options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
+        });
+      }
+
+      // ── dim-tab charts: top 10 by one metric (horizontal bars, biggest on top)
+      const DIM_CHARTS = {
+        ships:     { title: 'Most Active Ships', key: 'ShipID',    name: 'vessel',      label: 'Nautical miles', value: r => r.DistanceTravelled_Nautical_Miles || 0 },
+        clients:   { title: 'Most Deals Closed', key: 'ClientID',  name: 'clientName',  label: 'Shipments',      value: () => 1 },
+        companies: { title: 'Top Spenders',      key: 'CompanyID', name: 'companyName', label: 'Cost (US$)',     value: r => r.ShipmentTotalCost || 0 }
+      };
+
+      function renderDimChart(tabId) {
+        const spec = DIM_CHARTS[tabId];
+        document.getElementById('gCharts').classList.toggle('hidden', !spec);
+        if (!spec) {
+          if (chartDim) { chartDim.destroy(); chartDim = null; }
+          return;
+        }
+        document.getElementById('gChartTitle').textContent = spec.title;
+
+        const byId = new Map();
+        joinedShipments().forEach(r => {
+          const id = r[spec.key];
+          if (id == null) return;
+          const e = byId.get(id) || { name: r[spec.name], total: 0 };
+          e.total += spec.value(r);
+          byId.set(id, e);
+        });
+        // reverse so the largest bar lands at the top of a horizontal axis
+        const top = [...byId.values()].sort((a, b) => b.total - a.total).slice(0, 10).reverse();
+
+        if (chartDim) chartDim.destroy();
+        chartDim = new Chart(document.getElementById('gChart'), {
+          type: 'bar',
+          data: {
+            labels: top.map(e => e.name),
+            datasets: [{ label: spec.label, data: top.map(e => Math.round(e.total)), backgroundColor: 'rgba(37,99,235,.65)' }]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+            plugins: { legend: { display: false } },
+            scales: { x: { beginAtZero: true } }
+          }
+        });
+      }
+
       // ── generic dim tab
       function renderGeneric(tabId) {
         const tab = TABS.find(t => t.id === tabId);
@@ -396,6 +466,8 @@
           : `<tr><td colspan="${tab.cols.length + 1}" class="empty">No rows match your search.</td></tr>`;
 
         renderPager('gPagination', p.page, totalPages, (n) => { view[tabId].page = n; renderGeneric(tabId); }, rows.length, slice.length);
+
+        renderDimChart(tabId);
       }
 
       // ── shared pager

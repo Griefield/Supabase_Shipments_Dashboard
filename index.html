@@ -4,17 +4,31 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Sea Door Shipments Dashboard</title>
 <style>
-  :root { --bg:#f8fafc; --muted:#64748b; --card:#ffffff; --accent:#0f172a; --ok:#10b981; --warn:#f59e0b; --err:#ef4444; --border:#e2e8f0; --chart:#2563eb; }
+  :root {
+    --bg:#f8fafc; --muted:#64748b; --card:#ffffff; --accent:#0f172a;
+    --ok:#10b981; --warn:#f59e0b; --err:#ef4444; --border:#e2e8f0; --chart:#2563eb;
+    --hover:#eef2f7; --th-bg:#f7f9fc; --row-hover:#eef4ff; --zebra:rgba(0,0,0,.015);
+    --badge-bg:#e2e8f0; --btn-bg:#0f172a; --btn-bg-hover:#1e293b; --btn-fg:#ffffff;
+    --pagebtn-bg:#ffffff; --shadow:rgba(0,0,0,.05);
+  }
+  /* navy dark mode */
+  html[data-theme="dark"] {
+    --bg:#0a1628; --muted:#8fa6c9; --card:#10233f; --accent:#e6eefc;
+    --border:#1e3a5f; --chart:#4a8cff;
+    --hover:#16304f; --th-bg:#0d1d33; --row-hover:#16304f; --zebra:rgba(255,255,255,.02);
+    --badge-bg:#1e3a5f; --btn-bg:#2563eb; --btn-bg-hover:#3b82f6; --btn-fg:#ffffff;
+    --pagebtn-bg:#16304f; --shadow:rgba(0,0,0,.4);
+  }
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; background:var(--bg); color:var(--accent); line-height:1.5; padding:0 1rem 2rem}
   a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
-  header{padding:1rem 1.5rem; background:var(--card); margin:1rem 0 1rem; border-radius:8px; box-shadow:0 1px 2px rgba(0,0,0,.05)}
+  header{padding:1rem 1.5rem; background:var(--card); margin:1rem 0 1rem; border-radius:8px; box-shadow:0 1px 2px var(--shadow)}
   .header-title{font-size:1.25rem; font-weight:600; display:flex;align-items:center;gap:.5rem}
   .sub{font-size:.85rem; color:var(--muted); display:flex; align-items:center; gap:.4rem}
   /* Tabs */
   .tabs{display:flex; flex-wrap:wrap; gap:.25rem; border-bottom:2px solid var(--border); margin-bottom:1rem}
   .tab{padding:.6rem 1.1rem; border:1px solid transparent; border-bottom:none; border-radius:8px 8px 0 0; background:transparent; color:var(--muted); font-size:.9rem; font-weight:500; cursor:pointer; position:relative; top:2px}
-  .tab:hover{background:#eef2f7; color:var(--accent)}
+  .tab:hover{background:var(--hover); color:var(--accent)}
   .tab.active{background:var(--card); border-color:var(--border); color:var(--accent); font-weight:600}
   .tab .count{font-size:.7rem; color:var(--muted); margin-left:.35rem}
   /* KPI */
@@ -25,24 +39,31 @@
   /* Bars */
   .bar{background:var(--card); border:1px solid var(--border); border-radius:8px; padding:.75rem 1rem; margin-bottom:1rem; display:grid;grid-template-columns:1fr auto auto;gap:1rem;align-items:center}
   .bar.single{grid-template-columns:1fr auto}
-  .input{width:100%;padding:.6rem .8rem; border:1px solid var(--border); border-radius:6px; font-size:.9rem}
-  .select{padding:.6rem .8rem; border:1px solid var(--border); border-radius:6px; background:#fff; cursor:pointer; max-width:240px}
-  .btn{padding:.6rem 1rem; background:var(--accent); color:#fff; border:none; border-radius:6px; font-size:.9rem; cursor:pointer; white-space:nowrap}
-  .btn:hover{background:#1e293b}
+  .input{width:100%;padding:.6rem .8rem; border:1px solid var(--border); border-radius:6px; font-size:.9rem; background:var(--card); color:inherit}
+  .select{padding:.6rem .8rem; border:1px solid var(--border); border-radius:6px; background:var(--card); color:inherit; cursor:pointer; max-width:240px}
+  .btn{padding:.6rem 1rem; background:var(--btn-bg); color:var(--btn-fg); border:none; border-radius:6px; font-size:.9rem; cursor:pointer; white-space:nowrap}
+  .btn:hover{background:var(--btn-bg-hover)}
+  .theme-toggle{padding:.6rem .8rem; font-size:1rem; line-height:1}
   .hint{font-size:.8rem; color:var(--muted); white-space:nowrap}
   /* Table */
   .table-wrap{background:var(--card); border:1px solid var(--border); border-radius:8px 8px 0 0; overflow-x:auto}
   table{width:100%; border-collapse:collapse; font-size:.85rem; white-space:nowrap}
   th,td{padding:.5rem .75rem; border-bottom:1px solid var(--border); text-align:left}
-  th{background:#f7f9fc; color:var(--muted); font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; position:sticky; top:0}
-  tr:nth-child(even){background:rgba(0,0,0,.015)}
-  tbody tr:hover{background:#eef4ff}
-  .badge{display:inline-block; padding:.12rem .4rem; background:#e2e8f0; border-radius:4px; font-size:.75rem; font-weight:500}
+  th{background:var(--th-bg); color:var(--muted); font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; position:sticky; top:0}
+  tr:nth-child(even){background:var(--zebra)}
+  tbody tr:hover{background:var(--row-hover)}
+  .badge{display:inline-block; padding:.12rem .4rem; background:var(--badge-bg); border-radius:4px; font-size:.75rem; font-weight:500}
+  .badge.word-link{cursor:pointer}
+  .badge.word-link:hover{color:var(--chart); text-decoration:underline}
+  .row-link{cursor:pointer}
+  .drill{display:flex; align-items:center; gap:.5rem; background:var(--card); border:1px solid var(--border); border-left:3px solid var(--chart); border-radius:6px; padding:.5rem .75rem; margin-bottom:1rem; font-size:.85rem}
+  .drill button{background:none; border:none; cursor:pointer; color:var(--muted); font-size:1rem; line-height:1; padding:0 .15rem}
+  .drill button:hover{color:var(--err)}
   .route{font-variant-numeric:tabular-nums}
   /* Pagination */
   .pagination{padding:.5rem 1rem; background:var(--card); display:flex; gap:.35rem; justify-content:center; align-items:center; flex-wrap:wrap; border:1px solid var(--border); border-top:none; border-radius:0 0 8px 8px; position:sticky; bottom:0; z-index:2}
-  .page-btn{padding:.35rem .7rem; background:#fff; border:1px solid var(--border); border-radius:4px; cursor:pointer; font-size:.85rem}
-  .page-btn.active{background:var(--accent); color:#fff}
+  .page-btn{padding:.35rem .7rem; background:var(--pagebtn-bg); border:1px solid var(--border); border-radius:4px; cursor:pointer; font-size:.85rem}
+  .page-btn.active{background:var(--btn-bg); color:var(--btn-fg)}
   /* Charts */
   .charts{display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:1rem; margin-top:1.5rem}
   .chart-card{background:var(--card); border:1px solid var(--border); border-radius:8px; padding:1rem; min-width:0}
@@ -78,6 +99,7 @@
   <header>
     <div class="header-title">
       <span>Sea Door Shipments</span>
+      <button class="btn theme-toggle" id="themeBtn" title="Toggle light/dark theme">🌙</button>
       <button class="btn" id="refreshBtn">Refresh</button>
       <span class="sub" style="margin-left:auto">Last updated: <span id="lastUpdated">—</span></span>
     </div>
@@ -99,6 +121,8 @@
       <select class="select" id="clientFilter"><option value="">All clients</option></select>
       <button class="btn" id="applyFilter">Apply</button>
     </div>
+
+    <div class="drill hidden" id="drillChip"></div>
 
     <div class="table-card">
       <div class="table-wrap">
@@ -180,6 +204,8 @@
       const view = {};                                             // tab -> {page, q}
       TABS.forEach(t => { view[t.id] = { page: 1, q: '' }; });
       let activeTab = 'shipments';
+      let drill = null;                                            // active drill-down {key,id,name}
+      let theme = localStorage.getItem('theme') === 'dark' ? 'dark' : 'light';
       let chartClient = null, chartMonth = null, chartDaily = null, chartDim = null;
 
       // ── DOM
@@ -189,6 +215,33 @@
       const lastUpdated = document.getElementById('lastUpdated');
       const clientFilter = document.getElementById('clientFilter');
       const searchInput = document.getElementById('searchInput');
+      const themeBtn = document.getElementById('themeBtn');
+      const drillChip = document.getElementById('drillChip');
+
+      // ── theme + shared chart colors
+      function themeVars() {
+        const s = getComputedStyle(document.documentElement);
+        const g = n => s.getPropertyValue(n).trim();
+        return { text: g('--muted'), grid: g('--border'), chart: g('--chart'), ok: g('--ok'), warn: g('--warn'), err: g('--err') };
+      }
+      function alpha(hex, a) {
+        const h = hex.replace('#', '');
+        const n = parseInt(h.length === 3 ? h.split('').map(c => c + c).join('') : h, 16);
+        return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+      }
+      // Chart.js reads these globals for ticks/gridlines, so one call re-themes every chart
+      function applyChartDefaults() {
+        const c = themeVars();
+        Chart.defaults.color = c.text;
+        Chart.defaults.borderColor = c.grid;
+      }
+
+      // ── which dim id column maps to a shipment foreign key
+      const DRILL = {
+        clients:   { key: 'ClientID',  name: 'Client_Name' },
+        companies: { key: 'CompanyID', name: 'Company_Name' },
+        ships:     { key: 'ShipID',    name: 'Vessel_Name' }
+      };
 
       // ── fetch every row of a table, paginating past the 1000-row cap
       async function fetchAll(table) {
@@ -236,10 +289,19 @@
       }
 
       function renderActive() {
+        applyChartDefaults();
         const isShipments = activeTab === 'shipments';
         panelShipments.classList.toggle('hidden', !isShipments);
         panelGeneric.classList.toggle('hidden', isShipments);
         if (isShipments) renderShipments(); else renderGeneric(activeTab);
+      }
+
+      // ── jump to the shipments tab filtered to one client/company/ship
+      function setDrill(key, id, name) {
+        drill = { key, id: String(id), name };
+        activeTab = 'shipments';
+        renderTabs();
+        renderActive();
       }
 
       // ── client dropdown (once)
@@ -317,6 +379,11 @@
           );
         }
         if (clientFilter.value) rows = rows.filter(r => String(r.ClientID) === clientFilter.value);
+        if (drill) rows = rows.filter(r => String(r[drill.key]) === drill.id);
+
+        // chip showing the active drill-down
+        drillChip.classList.toggle('hidden', !drill);
+        if (drill) drillChip.innerHTML = `Showing shipments for <strong>${drill.name}</strong> <button title="Clear">✕</button>`;
 
         // table
         const p = view.shipments;
@@ -325,15 +392,23 @@
         const slice = rows.slice((p.page - 1) * PAGE_SIZE, p.page * PAGE_SIZE);
 
         const tbody = document.querySelector('#shipmentsTable tbody');
+        tbody.onclick = (e) => {
+          const el = e.target.closest('[data-key]');
+          if (el) setDrill(el.dataset.key, el.dataset.id, el.dataset.name);
+        };
+        // id-bearing cells become clickable chips; rows with a missing FK stay plain text
+        const chip = (key, id, name, text) => id == null
+          ? text
+          : `<span class="badge word-link" data-key="${key}" data-id="${id}" data-name="${name}">${text}</span>`;
         tbody.innerHTML = slice.length
           ? slice.map((r, i) => `
               <tr>
                 <td>${(p.page - 1) * PAGE_SIZE + i + 1}</td>
                 <td>${r.ShipmentID}</td>
                 <td>${r.date || '—'}</td>
-                <td><span class="badge">${r.clientName}</span></td>
-                <td>${r.companyName}</td>
-                <td>${r.vessel}</td>
+                <td>${chip('ClientID', r.ClientID, r.clientName, r.clientName)}</td>
+                <td>${chip('CompanyID', r.CompanyID, r.companyName, r.companyName)}</td>
+                <td>${chip('ShipID', r.ShipID, r.vessel, r.vessel)}</td>
                 <td class="route">${r.portFrom} → ${r.portTo}</td>
                 <td>${Number(r.ShipmentLoad_Tonnes || 0).toLocaleString()}</td>
                 <td>${Number(r.ShipmentTotalCost || 0).toLocaleString()}</td>
@@ -360,13 +435,14 @@
         const labels = Object.keys(agg).sort((a, b) => agg[b].cost - agg[a].cost).slice(0, 8);
 
         if (chartClient) chartClient.destroy();
+        const c = themeVars();
         chartClient = new Chart(document.getElementById('chartClient'), {
           type: 'bar',
           data: {
             labels,
             datasets: [
-              { label: 'Cost (US$)', data: labels.map(l => Math.round(agg[l].cost)), backgroundColor: 'rgba(37,99,235,.65)', yAxisID: 'y' },
-              { label: 'Load (T)',   data: labels.map(l => Math.round(agg[l].load)), backgroundColor: 'rgba(16,185,129,.65)', yAxisID: 'y1' }
+              { label: 'Cost (US$)', data: labels.map(l => Math.round(agg[l].cost)), backgroundColor: alpha(c.chart, .65), yAxisID: 'y' },
+              { label: 'Load (T)',   data: labels.map(l => Math.round(agg[l].load)), backgroundColor: alpha(c.ok, .65), yAxisID: 'y1' }
             ]
           },
           options: {
@@ -390,11 +466,12 @@
         const labels = Object.keys(agg).sort();
 
         if (chartMonth) chartMonth.destroy();
+        const c = themeVars();
         chartMonth = new Chart(document.getElementById('chartMonth'), {
           type: 'line',
           data: {
             labels,
-            datasets: [{ label: 'Shipments', data: labels.map(l => agg[l]), borderColor: '#2563eb', backgroundColor: 'rgba(37,99,235,.15)', fill: true, tension: .3 }]
+            datasets: [{ label: 'Shipments', data: labels.map(l => agg[l]), borderColor: c.chart, backgroundColor: alpha(c.chart, .15), fill: true, tension: .3 }]
           },
           options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
         });
@@ -407,11 +484,12 @@
         const labels = Object.keys(agg).sort();
 
         if (chartDaily) chartDaily.destroy();
+        const c = themeVars();
         chartDaily = new Chart(document.getElementById('chartDaily'), {
           type: 'line',
           data: {
             labels,
-            datasets: [{ label: 'Shipments', data: labels.map(l => agg[l]), borderColor: '#0f172a', backgroundColor: 'rgba(15,23,42,.1)', fill: true, tension: .3, pointRadius: 2 }]
+            datasets: [{ label: 'Shipments', data: labels.map(l => agg[l]), borderColor: c.chart, backgroundColor: alpha(c.chart, .1), fill: true, tension: .3, pointRadius: 2 }]
           },
           options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
         });
@@ -425,6 +503,8 @@
       };
 
       function renderDimChart(tabId) {
+        // ports use a dedicated multi-series line chart
+        if (tabId === 'ports') { document.getElementById('gCharts').classList.remove('hidden'); drawPortChart(); return; }
         const spec = DIM_CHARTS[tabId];
         document.getElementById('gCharts').classList.toggle('hidden', !spec);
         if (!spec) {
@@ -445,16 +525,63 @@
         const top = [...byId.values()].sort((a, b) => b.total - a.total).slice(0, 10).reverse();
 
         if (chartDim) chartDim.destroy();
+        const c = themeVars();
         chartDim = new Chart(document.getElementById('gChart'), {
           type: 'bar',
           data: {
             labels: top.map(e => e.name),
-            datasets: [{ label: spec.label, data: top.map(e => Math.round(e.total)), backgroundColor: 'rgba(37,99,235,.65)' }]
+            datasets: [{ label: spec.label, data: top.map(e => Math.round(e.total)), backgroundColor: alpha(c.chart, .65) }]
           },
           options: {
             responsive: true, maintainAspectRatio: false, indexAxis: 'y',
             plugins: { legend: { display: false } },
             scales: { x: { beginAtZero: true } }
+          }
+        });
+      }
+
+      // ── ports: top-5 port traffic over time (departures + arrivals per month)
+      function drawPortChart() {
+        document.getElementById('gChartTitle').textContent = 'Port Traffic Over Time';
+
+        const months = new Set();
+        const perPort = new Map();   // port name -> { 'YYYY-MM': calls }
+        const add = (port, m) => {
+          if (!port || !m) return;
+          months.add(m);
+          const e = perPort.get(port) || {};
+          e[m] = (e[m] || 0) + 1;
+          perPort.set(port, e);
+        };
+        joinedShipments().forEach(r => {
+          const m = (r.date || '').slice(0, 7);
+          add(r.portFrom, m);
+          add(r.portTo, m);
+        });
+        const labels = [...months].sort();
+        const top = [...perPort.entries()]
+          .map(([name, e]) => ({ name, total: Object.values(e).reduce((a, b) => a + b, 0), e }))
+          .sort((a, b) => b.total - a.total).slice(0, 5);
+
+        const c = themeVars();
+        const palette = [c.chart, c.ok, '#a855f7', c.warn, '#06b6d4'];
+        if (chartDim) chartDim.destroy();
+        chartDim = new Chart(document.getElementById('gChart'), {
+          type: 'line',
+          data: {
+            labels,
+            datasets: top.map((p, i) => ({
+              label: p.name,
+              data: labels.map(m => p.e[m] || 0),
+              borderColor: palette[i % palette.length],
+              backgroundColor: alpha(palette[i % palette.length], .12),
+              tension: .3, pointRadius: 2, fill: false
+            }))
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 12 } } },
+            scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
           }
         });
       }
@@ -483,10 +610,18 @@
         if (p.page > totalPages) p.page = totalPages;
         const slice = rows.slice((p.page - 1) * PAGE_SIZE, p.page * PAGE_SIZE);
 
+        const d = DRILL[tabId];
+        tbody.onclick = d ? (e) => {
+          const tr = e.target.closest('tr[data-id]');
+          if (tr) setDrill(d.key, tr.dataset.id, tr.dataset.name);
+        } : null;
+
         tbody.innerHTML = slice.length
-          ? slice.map((r, i) =>
-              '<tr><td>' + ((p.page - 1) * PAGE_SIZE + i + 1) + '</td>' +
-              tab.cols.map(c => `<td>${r[c] ?? '—'}</td>`).join('') + '</tr>').join('')
+          ? slice.map((r, i) => {
+              const attrs = d ? ` class="row-link" data-id="${r[d.key]}" data-name="${r[d.name]}"` : '';
+              return `<tr${attrs}><td>${(p.page - 1) * PAGE_SIZE + i + 1}</td>` +
+                tab.cols.map(c => `<td>${r[c] ?? '—'}</td>`).join('') + '</tr>';
+            }).join('')
           : `<tr><td colspan="${tab.cols.length + 1}" class="empty">No rows match your search.</td></tr>`;
 
         renderPager('gPagination', p.page, totalPages, (n) => { view[tabId].page = n; renderGeneric(tabId); }, rows.length, slice.length);
@@ -524,7 +659,26 @@
         mk('Next ›', page + 1, page >= totalPages, false);
       }
 
+      // ── theme: navy dark mode, persisted
+      function applyTheme() {
+        document.documentElement.setAttribute('data-theme', theme);
+        themeBtn.textContent = theme === 'dark' ? '☀️' : '🌙';
+        applyChartDefaults();
+      }
+      applyTheme();
+
       // ── events
+      drillChip.addEventListener('click', (e) => {
+        if (e.target.tagName === 'BUTTON') { drill = null; renderShipments(); }
+      });
+
+      themeBtn.addEventListener('click', () => {
+        theme = theme === 'dark' ? 'light' : 'dark';
+        localStorage.setItem('theme', theme);
+        applyTheme();
+        renderActive();
+      });
+
       document.getElementById('refreshBtn').addEventListener('click', loadAll);
       searchInput.addEventListener('input', () => { view.shipments.page = 1; renderShipments(); });
       document.getElementById('applyFilter').addEventListener('click', () => { view.shipments.page = 1; renderShipments(); });

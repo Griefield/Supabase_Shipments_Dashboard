@@ -36,9 +36,14 @@
   .kpi-card{background:var(--card); border:1px solid var(--border); border-radius:8px; padding:1rem; text-align:center; min-height:80px; display:flex;flex-direction:column;justify-content:center}
   .kpi-label{font-size:.75rem; color:var(--muted); text-transform:uppercase; letter-spacing:.05em}
   .kpi-value{font-size:1.4rem; font-weight:600; margin-top:.25rem}
+  /* ── home ── */
+  .home-hero{margin-bottom:1.25rem}
+  .home-brand{font-size:2rem; font-weight:700; letter-spacing:.02em; line-height:1.1}
+  .home-hero .sub{margin-top:.2rem; display:block}
+  .home-links{display:flex; flex-wrap:wrap; align-items:center; gap:.5rem; margin-top:1rem}
   /* Bars */
-  .bar{background:var(--card); border:1px solid var(--border); border-radius:8px; padding:.75rem 1rem; margin-bottom:1rem; display:grid;grid-template-columns:1fr auto auto;gap:1rem;align-items:center}
-  .bar.single{grid-template-columns:1fr auto}
+  .bar{background:var(--card); border:1px solid var(--border); border-radius:8px; padding:.75rem 1rem; margin-bottom:1rem; display:grid;grid-template-columns:1fr auto auto auto;gap:1rem;align-items:center}
+  .bar.single{grid-template-columns:1fr auto auto}
   .input{width:100%;padding:.6rem .8rem; border:1px solid var(--border); border-radius:6px; font-size:.9rem; background:var(--card); color:inherit}
   .select{padding:.6rem .8rem; border:1px solid var(--border); border-radius:6px; background:var(--card); color:inherit; cursor:pointer; max-width:240px}
   .btn{padding:.6rem 1rem; background:var(--btn-bg); color:var(--btn-fg); border:none; border-radius:6px; font-size:.9rem; cursor:pointer; white-space:nowrap}
@@ -52,6 +57,7 @@
   th{background:var(--th-bg); color:var(--muted); font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; position:sticky; top:0}
   tr:nth-child(even){background:var(--zebra)}
   tbody tr:hover{background:var(--row-hover)}
+  tfoot .total-row td{font-weight:600; background:var(--th-bg)}
   .badge{display:inline-block; padding:.12rem .4rem; background:var(--badge-bg); border-radius:4px; font-size:.75rem; font-weight:500}
   .badge.word-link{cursor:pointer}
   .badge.word-link:hover{color:var(--chart); text-decoration:underline}
@@ -98,6 +104,7 @@
     .kpi-strip{grid-template-columns:repeat(2,1fr); gap:.5rem; margin-bottom:1rem}
     .kpi-card{padding:.75rem; min-height:64px}
     .kpi-value{font-size:1.2rem}
+    .home-brand{font-size:1.5rem}
     .bar{grid-template-columns:1fr; gap:.5rem}
     .select{max-width:none}
     .charts{grid-template-columns:1fr; margin-top:1rem}
@@ -122,33 +129,116 @@
 
   <nav class="tabs" id="tabs"></nav>
 
-  <!-- ── Shipments panel ── -->
-  <section id="panel-shipments">
-    <div class="kpi-strip">
-      <div class="kpi-card"><div class="kpi-label">Total Shipments</div><div class="kpi-value" id="kpiTotal">—</div></div>
-      <div class="kpi-card"><div class="kpi-label">Total Load (T)</div><div class="kpi-value" id="kpiLoad">—</div></div>
-      <div class="kpi-card"><div class="kpi-label">Total Cost</div><div class="kpi-value" id="kpiCost">—</div></div>
-      <div class="kpi-card"><div class="kpi-label">Avg Distance (nm)</div><div class="kpi-value" id="kpiAvg">—</div></div>
+  <!-- ── Home dashboard ── -->
+  <section id="panel-home">
+    <div class="home-hero">
+      <div class="home-brand">Sea Door Shipments</div>
+      <div class="sub" id="homeMeta">Shipments overview</div>
     </div>
 
+    <div class="kpi-strip">
+      <div class="kpi-card"><div class="kpi-label">Total Shipments</div><div class="kpi-value" id="kpiTotal">—</div></div>
+      <div class="kpi-card"><div class="kpi-label">Total Load (Tonnes)</div><div class="kpi-value" id="kpiLoad">—</div></div>
+      <div class="kpi-card"><div class="kpi-label">Total Cost (US$)</div><div class="kpi-value" id="kpiCost">—</div></div>
+      <div class="kpi-card"><div class="kpi-label">Avg Distance (nautical miles)</div><div class="kpi-value" id="kpiAvg">—</div></div>
+    </div>
+
+    <div class="charts">
+      <div class="chart-card">
+        <div class="chart-head">
+          <h3>Shipments over Time</h3>
+          <select class="select select-sm" id="ovGrain" title="Group shipments by">
+            <option value="month">Monthly</option>
+            <option value="week">Weekly</option>
+            <option value="day" selected>Daily</option>
+          </select>
+        </div>
+        <div class="chart-box"><canvas id="hVolume"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-head">
+          <h3>Countries Interacting</h3>
+          <select class="select select-sm" id="countryBasis" title="Country source">
+            <option value="company">Company HQ</option>
+            <option value="ship">Ship registry</option>
+            <option value="port">Port country</option>
+          </select>
+        </div>
+        <div class="chart-box"><canvas id="hCountries"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-head">
+          <h3>Shipments by Weekday</h3>
+          <details class="port-picker" id="monthPicker">
+            <summary id="monthPickerBtn">All months ▾</summary>
+            <div class="port-panel">
+              <div class="port-list" id="monthList"></div>
+              <button type="button" class="port-clear" id="monthClear">Clear (all months)</button>
+            </div>
+          </details>
+        </div>
+        <div class="chart-box"><canvas id="hWeekday"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-head">
+          <h3>Port Traffic (Top 5)</h3>
+          <select class="select select-sm" id="hPortGrain" title="Group traffic by">
+            <option value="week" selected>Weekly</option>
+            <option value="day">Daily</option>
+            <option value="month">Monthly</option>
+          </select>
+        </div>
+        <div class="chart-box"><canvas id="hPorts"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-head">
+          <h3>Income from Costs</h3>
+          <select class="select select-sm" id="hIncomeGrain" title="Group income by">
+            <option value="month" selected>Monthly</option>
+            <option value="week">Weekly</option>
+            <option value="day">Daily</option>
+          </select>
+        </div>
+        <div class="chart-box"><canvas id="hIncome"></canvas></div>
+      </div>
+      <div class="chart-card"><h3>Most Active Ships</h3><div class="chart-box"><canvas id="hShips"></canvas></div></div>
+      <div class="chart-card"><h3>Most Deals Closed (Clients)</h3><div class="chart-box"><canvas id="hClients"></canvas></div></div>
+      <div class="chart-card"><h3>Top Spenders (Companies)</h3><div class="chart-box"><canvas id="hCompanies"></canvas></div></div>
+    </div>
+
+    <div class="home-links">
+      <span class="hint">Explore data:</span>
+      <button class="btn" data-goto="shipments">Shipments</button>
+      <button class="btn" data-goto="clients">Clients</button>
+      <button class="btn" data-goto="companies">Companies</button>
+      <button class="btn" data-goto="ports">Ports</button>
+      <button class="btn" data-goto="ships">Ships</button>
+      <button class="btn" data-goto="time">Time</button>
+    </div>
+  </section>
+
+  <!-- ── Shipments panel ── -->
+  <section id="panel-shipments" class="hidden">
     <div class="bar">
       <input class="input" type="text" id="searchInput" placeholder="Search… (ID, date, client, company, vessel, port)" />
       <select class="select" id="clientFilter"><option value="">All clients</option></select>
       <button class="btn" id="applyFilter">Apply</button>
+      <button class="btn" id="shipTableToggle">Show table</button>
     </div>
 
     <div class="drill hidden" id="drillChip"></div>
 
-    <div class="table-card">
+    <div class="table-card hidden" id="shipTableCard">
       <div class="table-wrap">
         <table id="shipmentsTable">
           <thead>
             <tr>
               <th>#</th><th>Shipment ID</th><th>Date</th><th>Client</th><th>Company</th>
-              <th>Vessel</th><th>Route</th><th>Load (T)</th><th>Cost</th><th>Dist (nm)</th>
+              <th>Vessel</th><th>Route</th><th>Load (Tonnes)</th><th>Cost (US$)</th><th>Dist (nautical miles)</th>
             </tr>
           </thead>
           <tbody></tbody>
+          <tfoot id="shipTotals"></tfoot>
         </table>
       </div>
       <div class="pagination" id="pagination"></div>
@@ -158,16 +248,26 @@
       <div class="chart-card"><h3>Cost &amp; Load by Client</h3><div class="chart-box"><canvas id="chartClient"></canvas></div></div>
       <div class="chart-card">
         <div class="chart-head">
-          <h3>Volume over Time</h3>
+          <h3>Shipments over Time</h3>
           <select class="select select-sm" id="volumeGrain" title="Group shipments by">
-            <option value="month">Monthly</option>
+            <option value="month" selected>Monthly</option>
             <option value="week">Weekly</option>
             <option value="day">Daily</option>
           </select>
         </div>
         <div class="chart-box"><canvas id="chartMonth"></canvas></div>
       </div>
-      <div class="chart-card"><h3>Shipments Over Time (Daily)</h3><div class="chart-box"><canvas id="chartDaily"></canvas></div></div>
+      <div class="chart-card">
+        <div class="chart-head">
+          <h3>Income from Costs</h3>
+          <select class="select select-sm" id="incomeGrain" title="Group income by">
+            <option value="month" selected>Monthly</option>
+            <option value="week">Weekly</option>
+            <option value="day">Daily</option>
+          </select>
+        </div>
+        <div class="chart-box"><canvas id="chartIncome"></canvas></div>
+      </div>
     </div>
   </section>
 
@@ -176,8 +276,9 @@
     <div class="bar single">
       <input class="input" type="text" id="gSearch" placeholder="Search…" />
       <span class="hint" id="gCount"></span>
+      <button class="btn" id="gTableToggle">Show table</button>
     </div>
-    <div class="table-card">
+    <div class="table-card hidden" id="gTableCard">
       <div class="table-wrap">
         <table id="gTable"><thead></thead><tbody></tbody></table>
       </div>
@@ -240,7 +341,7 @@
         CompanyID:'ID', Company_Name:'Company', Home_Country:'Country', Company_CEO:'CEO',
         PortID:'ID', Port_Name:'Port', Port_Address:'Address', Port_Contact:'Contact',
         ShipID:'ID', Vessel_Name:'Vessel', Ship_Country_Register:'Register',
-        'Ship_IMO_No.':'IMO No.', Vessel_Load_Capacity_tonnes:'Capacity (t)',
+        'Ship_IMO_No.':'IMO No.', Vessel_Load_Capacity_tonnes:'Capacity (tonnes)',
         TimeID:'ID', Date:'Date', Day_of_Week:'Day', Departure:'Departure', Arrival:'Arrival'
       };
 
@@ -249,14 +350,22 @@
       const view = {};                                             // tab -> {page, q}
       let allRows = [];                                            // joined shipments, reused by tables + charts
       const selectedPorts = new Set();                             // ports ticked in the Ports tab picker
-      TABS.forEach(t => { view[t.id] = { page: 1, q: '' }; });
-      let activeTab = 'shipments';
+      const selectedMonths = new Set();                            // months ticked in the Weekday chart picker (empty = all)
+      TABS.forEach(t => { view[t.id] = { page: 1, q: '', showTable: false }; });
+      let activeTab = 'home';
       let drill = null;                                            // active drill-down {key,id,name}
       let theme = localStorage.getItem('theme') === 'dark' ? 'dark' : 'light';
-      let chartClient = null, chartMonth = null, chartDaily = null, chartDim = null;
+      const charts = new Map();                                    // canvas id -> Chart instance
+
+      // one chart per canvas: destroy the old instance before mounting a new one
+      function mountChart(canvasId, config) {
+        if (charts.has(canvasId)) { charts.get(canvasId).destroy(); charts.delete(canvasId); }
+        charts.set(canvasId, new Chart(document.getElementById(canvasId), config));
+      }
 
       // ── DOM
       const tabsEl = document.getElementById('tabs');
+      const panelHome = document.getElementById('panel-home');
       const panelShipments = document.getElementById('panel-shipments');
       const panelGeneric = document.getElementById('panel-generic');
       const lastUpdated = document.getElementById('lastUpdated');
@@ -269,12 +378,16 @@
       function themeVars() {
         const s = getComputedStyle(document.documentElement);
         const g = n => s.getPropertyValue(n).trim();
-        return { text: g('--muted'), grid: g('--border'), chart: g('--chart'), ok: g('--ok'), warn: g('--warn'), err: g('--err') };
+        return { text: g('--muted'), grid: g('--border'), card: g('--card'), chart: g('--chart'), ok: g('--ok'), warn: g('--warn'), err: g('--err') };
       }
       function alpha(hex, a) {
         const h = hex.replace('#', '');
         const n = parseInt(h.length === 3 ? h.split('').map(c => c + c).join('') : h, 16);
         return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+      }
+      function chartPalette() {
+        const c = themeVars();
+        return [c.chart, c.ok, '#a855f7', c.warn, '#06b6d4', '#f43f5e', '#84cc16', '#6366f1', '#ec4899', '#14b8a6'];
       }
       // Chart.js reads these globals for ticks/gridlines, so one call re-themes every chart
       function applyChartDefaults() {
@@ -313,6 +426,7 @@
           lastUpdated.textContent = new Date().toLocaleTimeString();
           populateClients();
           populatePorts();
+          populateMonths();
           renderTabs();
           renderActive();
         } catch (err) {
@@ -325,6 +439,12 @@
       // ── tab bar
       function renderTabs() {
         tabsEl.innerHTML = '';
+        const home = document.createElement('button');
+        home.className = 'tab' + (activeTab === 'home' ? ' active' : '');
+        home.textContent = 'Home';
+        home.onclick = () => { activeTab = 'home'; renderTabs(); renderActive(); };
+        tabsEl.appendChild(home);
+
         TABS.forEach(t => {
           const b = document.createElement('button');
           b.className = 'tab' + (t.id === activeTab ? ' active' : '');
@@ -340,10 +460,38 @@
 
       function renderActive() {
         applyChartDefaults();
+        const isHome = activeTab === 'home';
         const isShipments = activeTab === 'shipments';
+        panelHome.classList.toggle('hidden', !isHome);
         panelShipments.classList.toggle('hidden', !isShipments);
-        panelGeneric.classList.toggle('hidden', isShipments);
-        if (isShipments) renderShipments(); else renderGeneric(activeTab);
+        panelGeneric.classList.toggle('hidden', isHome || isShipments);
+        if (isHome) renderHome();
+        else if (isShipments) renderShipments();
+        else renderGeneric(activeTab);
+      }
+
+      // ── Home dashboard: all charts over the full dataset
+      function renderHome() {
+        const total = allRows.length;
+        const sum = (arr, f) => arr.reduce((a, x) => a + (f(x) || 0), 0);
+        document.getElementById('kpiTotal').textContent = total.toLocaleString();
+        document.getElementById('kpiLoad').textContent = total ? Math.round(sum(allRows, r => r.ShipmentLoad_Tonnes)).toLocaleString() : '—';
+        document.getElementById('kpiCost').textContent = total ? Math.round(sum(allRows, r => r.ShipmentTotalCost)).toLocaleString() : '—';
+        document.getElementById('kpiAvg').textContent  = total ? Math.round(sum(allRows, r => r.DistanceTravelled_Nautical_Miles) / total).toLocaleString() : '—';
+
+        const dates = allRows.map(r => r.date).filter(Boolean).sort();
+        document.getElementById('homeMeta').textContent = total
+          ? `Shipments overview · ${total.toLocaleString()} shipments${dates.length ? ` · ${dates[0]} – ${dates[dates.length - 1]}` : ''}`
+          : 'Shipments overview';
+
+        drawVolumeChart(allRows, document.getElementById('ovGrain').value, 'hVolume');
+        drawCountryChart('hCountries');
+        drawWeekdayChart(allRows, 'hWeekday');
+        drawIncomeChart(allRows, document.getElementById('hIncomeGrain').value, 'hIncome');
+        drawPortChart([], document.getElementById('hPortGrain').value, 'hPorts');
+        drawRanked(DIM_CHARTS.ships, 'hShips');
+        drawRanked(DIM_CHARTS.clients, 'hClients');
+        drawRanked(DIM_CHARTS.companies, 'hCompanies');
       }
 
       // ── jump to the shipments tab filtered to one client/company/ship
@@ -400,6 +548,25 @@
           n === 0 ? 'Top 5 ports ▾' : `${n} port${n > 1 ? 's' : ''} ▾`;
       }
 
+      // ── month picker for the weekday chart (empty set = all months)
+      const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      function monthLabel(k) {
+        const [y, m] = k.split('-');
+        return `${MONTH_NAMES[Number(m) - 1]} ${y}`;
+      }
+      function populateMonths() {
+        const keys = [...new Set(allRows.map(r => (r.date || '').slice(0, 7)).filter(Boolean))].sort();
+        document.getElementById('monthList').innerHTML = keys.map(k =>
+          `<label><input type="checkbox" value="${k}"${selectedMonths.has(k) ? ' checked' : ''}> ${monthLabel(k)}</label>`
+        ).join('');
+        updateMonthPickerLabel();
+      }
+      function updateMonthPickerLabel() {
+        const n = selectedMonths.size;
+        document.getElementById('monthPickerBtn').textContent =
+          n === 0 ? 'All months ▾' : `${n} month${n > 1 ? 's' : ''} ▾`;
+      }
+
       // ── fast lookups for the star-schema joins
       function indexBy(rows, key) {
         const m = new Map();
@@ -421,15 +588,21 @@
           const arr = portBy.get(s.PortArrival);
           const t = timeBy.get(s.TimeID);
           const co = companyBy.get(s.CompanyID);
+          const countryOf = p => p ? (p.Port_Address || '').split(',').pop().trim() : '';
           return {
             ...s,
             date: t ? t.Date : '',
+            dayOfWeek: t ? t.Day_of_Week : '',
             clientName: c ? c.Client_Name : `ClientID ${s.ClientID}`,
             clientCompany: c ? c.Client_Company : '',
             companyName: co ? co.Company_Name : `CompanyID ${s.CompanyID}`,
+            companyCountry: co ? co.Home_Country : '',
             vessel: v ? v.Vessel_Name : `ShipID ${s.ShipID}`,
+            shipCountry: v ? v.Ship_Country_Register : '',
             portFrom: dep ? dep.Port_Name : `PortID ${s.PortDeparture}`,
-            portTo: arr ? arr.Port_Name : `PortID ${s.PortArrival}`
+            portTo: arr ? arr.Port_Name : `PortID ${s.PortArrival}`,
+            portFromCountry: countryOf(dep),
+            portToCountry: countryOf(arr)
           };
         }).filter(s => s.ShipmentID != null);
       }
@@ -437,14 +610,6 @@
       // ── Shipments tab
       function renderShipments() {
         let rows = allRows;
-
-        // KPIs (always over the whole dataset, not the filtered slice)
-        const total = rows.length;
-        document.getElementById('kpiTotal').textContent = total.toLocaleString();
-        const sum = (arr, f) => arr.reduce((a, x) => a + (f(x) || 0), 0);
-        document.getElementById('kpiLoad').textContent = total ? Math.round(sum(rows, r => r.ShipmentLoad_Tonnes)).toLocaleString() : '—';
-        document.getElementById('kpiCost').textContent = total ? Math.round(sum(rows, r => r.ShipmentTotalCost)).toLocaleString() : '—';
-        document.getElementById('kpiAvg').textContent  = total ? Math.round(sum(rows, r => r.DistanceTravelled_Nautical_Miles) / total).toLocaleString() : '—';
 
         // filters
         const q = searchInput.value.trim().toLowerCase();
@@ -469,6 +634,8 @@
 
         // table
         const p = view.shipments;
+        document.getElementById('shipTableCard').classList.toggle('hidden', !p.showTable);
+        document.getElementById('shipTableToggle').textContent = p.showTable ? 'Hide table' : 'Show table';
         const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
         if (p.page > totalPages) p.page = totalPages;
         const slice = rows.slice((p.page - 1) * PAGE_SIZE, p.page * PAGE_SIZE);
@@ -503,15 +670,39 @@
               </tr>`).join('')
           : '<tr><td colspan="10" class="empty">No rows match your filters.</td></tr>';
 
+        // totals footer: only for a clicked client/company/ship; the entity total ignores search
+        const tfoot = document.getElementById('shipTotals');
+        if (drill) {
+          const entity = allRows.filter(r => String(r[drill.key]) === drill.id);
+          const sumOf = (list, f) => Math.round(list.reduce((a, x) => a + (f(x) || 0), 0)).toLocaleString();
+          const totalRow = (label, list) => `
+            <tr class="total-row">
+              <td>${label}</td>
+              <td>${list.length.toLocaleString()} shipment${list.length === 1 ? '' : 's'}</td>
+              <td colspan="5"></td>
+              <td>${sumOf(list, r => r.ShipmentLoad_Tonnes)}</td>
+              <td>${sumOf(list, r => r.ShipmentTotalCost)}</td>
+              <td>${sumOf(list, r => r.DistanceTravelled_Nautical_Miles)}</td>
+            </tr>`;
+          tfoot.innerHTML = totalRow('Total', entity) + totalRow('Filtered', rows);
+        } else {
+          tfoot.innerHTML = '';
+        }
+
         renderPager('pagination', p.page, totalPages, (n) => { view.shipments.page = n; renderShipments(); }, rows.length, slice.length);
 
-        drawClientChart(rows);
-        drawVolumeChart(rows);
-        drawDailyChart(rows);
+        drawClientChart(rows, 'chartClient');
+        drawVolumeChart(rows, document.getElementById('volumeGrain').value, 'chartMonth');
+        drawIncomeChart(rows, document.getElementById('incomeGrain').value, 'chartIncome');
       }
 
-      // ── chart: cost & load by client (top 8)
-      function drawClientChart(rows) {
+      // ── chart: cost & load by client (top 8; labels abbreviated, full name on hover)
+      function abbreviateName(name) {
+        const parts = String(name).trim().split(/\s+/);
+        if (parts.length < 2) return name;
+        return `${parts.slice(1).join(' ')} ${parts[0][0]}.`;
+      }
+      function drawClientChart(rows, canvasId) {
         const agg = {};
         rows.forEach(r => {
           const k = r.clientName;
@@ -521,12 +712,11 @@
         });
         const labels = Object.keys(agg).sort((a, b) => agg[b].cost - agg[a].cost).slice(0, 8);
 
-        if (chartClient) chartClient.destroy();
         const c = themeVars();
-        chartClient = new Chart(document.getElementById('chartClient'), {
+        mountChart(canvasId, {
           type: 'bar',
           data: {
-            labels,
+            labels: labels.map(abbreviateName),
             datasets: [
               { label: 'Cost (US$)', data: labels.map(l => Math.round(agg[l].cost)), backgroundColor: alpha(c.chart, .65), yAxisID: 'y' },
               { label: 'Load (T)',   data: labels.map(l => Math.round(agg[l].load)), backgroundColor: alpha(c.ok, .65), yAxisID: 'y1' }
@@ -534,6 +724,7 @@
           },
           options: {
             responsive: true, maintainAspectRatio: false,
+            plugins: { tooltip: { callbacks: { title: items => labels[items[0].dataIndex] } } },
             scales: {
               y:  { beginAtZero: true, position: 'left',  title: { display: true, text: 'Cost' } },
               y1: { beginAtZero: true, position: 'right', title: { display: true, text: 'Load (T)' }, grid: { drawOnChartArea: false } }
@@ -590,13 +781,10 @@
       }
 
       // ── chart: shipment volume by month / week / day (selector)
-      function drawVolumeChart(rows) {
-        const grain = document.getElementById('volumeGrain').value;
+      function drawVolumeChart(rows, grain, canvasId) {
         const { keys, data } = countsByBucket(rows, grain);
-
-        if (chartMonth) chartMonth.destroy();
         const c = themeVars();
-        chartMonth = new Chart(document.getElementById('chartMonth'), {
+        mountChart(canvasId, {
           type: 'line',
           data: {
             labels: keys.map(GRAINS[grain].label),
@@ -606,43 +794,102 @@
         });
       }
 
-      // ── chart: shipments per day (zero-filled so drill-downs stay continuous)
-      function drawDailyChart(rows) {
-        const { data } = countsByBucket(rows, 'day');
-        const labels = bucketKeys('day');
-
-        if (chartDaily) chartDaily.destroy();
+      // ── chart: income from costs (sum of ShipmentTotalCost per bucket)
+      function drawIncomeChart(rows, grain, canvasId) {
+        const g = GRAINS[grain];
+        const keys = bucketKeys(grain);
+        const sums = new Map();
+        rows.forEach(r => {
+          if (!r.date) return;
+          const k = g.key(r.date);
+          sums.set(k, (sums.get(k) || 0) + (r.ShipmentTotalCost || 0));
+        });
+        const data = keys.map(k => Math.round(sums.get(k) || 0));
         const c = themeVars();
-        chartDaily = new Chart(document.getElementById('chartDaily'), {
+        mountChart(canvasId, {
           type: 'line',
           data: {
-            labels,
-            datasets: [{ label: 'Shipments', data, borderColor: c.chart, backgroundColor: alpha(c.chart, .1), fill: true, tension: .3, pointRadius: 2 }]
+            labels: keys.map(g.label),
+            datasets: [{ label: 'Income (US$)', data, borderColor: c.ok, backgroundColor: alpha(c.ok, .15), fill: true, tension: .3, pointRadius: 2 }]
           },
-          options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { tooltip: { callbacks: { label: ctx => `US$ ${Number(ctx.raw).toLocaleString()}` } } },
+            scales: { y: { beginAtZero: true, ticks: { callback: v => '$' + Number(v).toLocaleString() } } }
+          }
         });
       }
 
-      // ── dim-tab charts: top 10 by one metric (horizontal bars, biggest on top)
+      // ── chart: shipments by weekday (fixed Mon–Sun order, optional month filter)
+      const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+      function drawWeekdayChart(rows, canvasId) {
+        if (selectedMonths.size) rows = rows.filter(r => selectedMonths.has((r.date || '').slice(0, 7)));
+        const counts = new Map(DAYS.map(d => [d, 0]));
+        rows.forEach(r => {
+          if (counts.has(r.dayOfWeek)) counts.set(r.dayOfWeek, counts.get(r.dayOfWeek) + 1);
+        });
+        const c = themeVars();
+        mountChart(canvasId, {
+          type: 'bar',
+          data: {
+            labels: DAYS.map(d => d.slice(0, 3)),
+            datasets: [{ label: 'Shipments', data: DAYS.map(d => counts.get(d)), backgroundColor: alpha(c.chart, .65) }]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+          }
+        });
+      }
+
+      // ── chart: countries interacting with shipments (selector picks the source)
+      function drawCountryChart(canvasId) {
+        const basis = document.getElementById('countryBasis').value;
+        const counts = new Map();
+        const add = k => { if (k) counts.set(k, (counts.get(k) || 0) + 1); };
+        allRows.forEach(r => {
+          if (basis === 'company') add(r.companyCountry);
+          else if (basis === 'ship') add(r.shipCountry);
+          else { add(r.portFromCountry); add(r.portToCountry); }
+        });
+        const entries = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+        const totalCount = entries.reduce((a, e) => a + e[1], 0);
+        const pct = n => totalCount ? Math.round(n / totalCount * 100) : 0;
+        const c = themeVars();
+        const palette = chartPalette();
+        mountChart(canvasId, {
+          type: 'doughnut',
+          data: {
+            labels: entries.map(e => `${e[0]} ${pct(e[1])}%`),
+            datasets: [{
+              data: entries.map(e => e[1]),
+              backgroundColor: entries.map((_, i) => alpha(palette[i % palette.length], .75)),
+              borderColor: c.card,
+              borderWidth: 2
+            }]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false, cutout: '45%',
+            plugins: {
+              legend: { position: 'bottom', labels: { boxWidth: 10 } },
+              tooltip: { callbacks: {
+                title: items => entries[items[0].dataIndex][0],
+                label: ctx => `${pct(ctx.raw)}% · ${Number(ctx.raw).toLocaleString()} shipments`
+              } }
+            }
+          }
+        });
+      }
+
+      // ── dim charts: top 10 by one metric (horizontal bars, biggest on top)
       const DIM_CHARTS = {
         ships:     { title: 'Most Active Ships', key: 'ShipID',    name: 'vessel',      label: 'Nautical miles', value: r => r.DistanceTravelled_Nautical_Miles || 0 },
         clients:   { title: 'Most Deals Closed', key: 'ClientID',  name: 'clientName',  label: 'Shipments',      value: () => 1 },
         companies: { title: 'Top Spenders',      key: 'CompanyID', name: 'companyName', label: 'Cost (US$)',     value: r => r.ShipmentTotalCost || 0 }
       };
 
-      function renderDimChart(tabId) {
-        // ports use a dedicated line chart with its own port/grain controls
-        const isPorts = tabId === 'ports';
-        document.getElementById('portControls').classList.toggle('hidden', !isPorts);
-        if (isPorts) { document.getElementById('gCharts').classList.remove('hidden'); drawPortChart(); return; }
-        const spec = DIM_CHARTS[tabId];
-        document.getElementById('gCharts').classList.toggle('hidden', !spec);
-        if (!spec) {
-          if (chartDim) { chartDim.destroy(); chartDim = null; }
-          return;
-        }
-        document.getElementById('gChartTitle').textContent = spec.title;
-
+      function drawRanked(spec, canvasId) {
         const byId = new Map();
         allRows.forEach(r => {
           const id = r[spec.key];
@@ -654,9 +901,8 @@
         // reverse so the largest bar lands at the top of a horizontal axis
         const top = [...byId.values()].sort((a, b) => b.total - a.total).slice(0, 10).reverse();
 
-        if (chartDim) chartDim.destroy();
         const c = themeVars();
-        chartDim = new Chart(document.getElementById('gChart'), {
+        mountChart(canvasId, {
           type: 'bar',
           data: {
             labels: top.map(e => e.name),
@@ -670,9 +916,30 @@
         });
       }
 
+      function renderDimChart(tabId) {
+        // ports use a dedicated line chart with its own port/grain controls
+        const isPorts = tabId === 'ports';
+        document.getElementById('portControls').classList.toggle('hidden', !isPorts);
+        if (isPorts) { document.getElementById('gCharts').classList.remove('hidden'); drawPortTabChart(); return; }
+        const spec = DIM_CHARTS[tabId];
+        document.getElementById('gCharts').classList.toggle('hidden', !spec);
+        if (!spec) return;
+        document.getElementById('gChartTitle').textContent = spec.title;
+        drawRanked(spec, 'gChart');
+      }
+
+      // ports tab title + chart, driven by its picker
+      function drawPortTabChart() {
+        const ids = [...selectedPorts];
+        const nameById = new Map((data.ports || []).map(p => [String(p.PortID), p.Port_Name]));
+        const single = ids.length === 1 ? nameById.get(ids[0]) : null;
+        document.getElementById('gChartTitle').textContent =
+          single ? `Port Traffic — ${single}` : 'Port Traffic Over Time';
+        drawPortChart(ids, document.getElementById('portGrain').value, 'gChart');
+      }
+
       // ── ports: selected ports (or top 5) over continuous weekly/daily/monthly buckets
-      function drawPortChart() {
-        const grain = document.getElementById('portGrain').value;
+      function drawPortChart(ids, grain, canvasId) {
         const g = GRAINS[grain];
         const keys = bucketKeys(grain);
         const nameById = new Map((data.ports || []).map(p => [String(p.PortID), p.Port_Name]));
@@ -691,19 +958,11 @@
           }
         });
 
-        // no ticks = the 5 busiest ports; otherwise exactly the ticked ports
-        const ids = selectedPorts.size
-          ? [...selectedPorts]
-          : [...totals.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([id]) => id);
+        // no selection = the 5 busiest ports
+        ids = ids.length ? ids : [...totals.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([id]) => id);
 
-        const single = ids.length === 1 ? nameById.get(ids[0]) : null;
-        document.getElementById('gChartTitle').textContent =
-          single ? `Port Traffic — ${single}` : 'Port Traffic Over Time';
-
-        const c = themeVars();
-        const palette = [c.chart, c.ok, '#a855f7', c.warn, '#06b6d4', '#f43f5e', '#84cc16', '#6366f1', '#ec4899', '#14b8a6'];
-        if (chartDim) chartDim.destroy();
-        chartDim = new Chart(document.getElementById('gChart'), {
+        const palette = chartPalette();
+        mountChart(canvasId, {
           type: 'line',
           data: {
             labels: keys.map(g.label),
@@ -728,6 +987,9 @@
         const tab = TABS.find(t => t.id === tabId);
         const rowsAll = data[tabId] || [];
         const p = view[tabId];
+
+        document.getElementById('gTableCard').classList.toggle('hidden', !p.showTable);
+        document.getElementById('gTableToggle').textContent = p.showTable ? 'Hide table' : 'Show table';
 
         let rows = rowsAll;
         const q = (p.q || '').trim().toLowerCase();
@@ -821,6 +1083,41 @@
       document.getElementById('applyFilter').addEventListener('click', () => { view.shipments.page = 1; renderShipments(); });
       clientFilter.addEventListener('change', () => { view.shipments.page = 1; renderShipments(); });
       document.getElementById('volumeGrain').addEventListener('change', renderShipments);
+      document.getElementById('incomeGrain').addEventListener('change', renderShipments);
+
+      // ── home chart controls
+      document.getElementById('ovGrain').addEventListener('change', () => {
+        drawVolumeChart(allRows, document.getElementById('ovGrain').value, 'hVolume');
+      });
+      document.getElementById('countryBasis').addEventListener('change', () => drawCountryChart('hCountries'));
+      document.getElementById('hPortGrain').addEventListener('change', () => {
+        drawPortChart([], document.getElementById('hPortGrain').value, 'hPorts');
+      });
+      document.getElementById('hIncomeGrain').addEventListener('change', () => {
+        drawIncomeChart(allRows, document.getElementById('hIncomeGrain').value, 'hIncome');
+      });
+
+      // ── per-tab table toggles (tables start hidden)
+      document.getElementById('shipTableToggle').addEventListener('click', () => {
+        view.shipments.showTable = !view.shipments.showTable;
+        renderShipments();
+      });
+      document.getElementById('gTableToggle').addEventListener('click', () => {
+        const v = view[activeTab];
+        if (!v) return;
+        v.showTable = !v.showTable;
+        renderGeneric(activeTab);
+      });
+
+      // ── home "Explore data" shortcuts
+      document.querySelectorAll('[data-goto]').forEach(b => {
+        b.addEventListener('click', () => {
+          activeTab = b.dataset.goto;
+          renderTabs();
+          renderActive();
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+      });
 
       // ── port picker: search-filter the list, tick ports to compare
       document.getElementById('portSearch').addEventListener('input', (e) => {
@@ -833,15 +1130,29 @@
         if (e.target.type !== 'checkbox') return;
         if (e.target.checked) selectedPorts.add(e.target.value); else selectedPorts.delete(e.target.value);
         updatePortPickerLabel();
-        drawPortChart();
+        drawPortTabChart();
       });
       document.getElementById('portClear').addEventListener('click', () => {
         selectedPorts.clear();
         document.querySelectorAll('#portList input').forEach(i => { i.checked = false; });
         updatePortPickerLabel();
-        drawPortChart();
+        drawPortTabChart();
       });
-      document.getElementById('portGrain').addEventListener('change', drawPortChart);
+      document.getElementById('portGrain').addEventListener('change', drawPortTabChart);
+
+      // ── month picker: tick months to filter the weekday chart (none = all)
+      document.getElementById('monthList').addEventListener('change', (e) => {
+        if (e.target.type !== 'checkbox') return;
+        if (e.target.checked) selectedMonths.add(e.target.value); else selectedMonths.delete(e.target.value);
+        updateMonthPickerLabel();
+        drawWeekdayChart(allRows, 'hWeekday');
+      });
+      document.getElementById('monthClear').addEventListener('click', () => {
+        selectedMonths.clear();
+        document.querySelectorAll('#monthList input').forEach(i => { i.checked = false; });
+        updateMonthPickerLabel();
+        drawWeekdayChart(allRows, 'hWeekday');
+      });
 
       document.getElementById('gSearch').addEventListener('input', (e) => {
         view[activeTab].q = e.target.value;

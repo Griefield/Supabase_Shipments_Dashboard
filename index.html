@@ -68,6 +68,19 @@
   .charts{display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:1rem; margin-top:1.5rem}
   .chart-card{background:var(--card); border:1px solid var(--border); border-radius:8px; padding:1rem; min-width:0}
   .chart-card h3{font-size:.85rem; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:.75rem; font-weight:600}
+  .chart-head{display:flex; align-items:center; justify-content:space-between; gap:.5rem; margin-bottom:.75rem; flex-wrap:wrap}
+  .chart-head h3{margin-bottom:0}
+  .chart-controls{display:flex; align-items:center; gap:.4rem; flex-wrap:wrap}
+  .select-sm{padding:.3rem .5rem; font-size:.8rem; max-width:none}
+  /* port picker: a <details> dropdown, so opening/closing needs no JS */
+  .port-picker{position:relative}
+  .port-picker summary{list-style:none; cursor:pointer; padding:.3rem .6rem; border:1px solid var(--border); border-radius:6px; font-size:.8rem; background:var(--card); color:var(--accent); white-space:nowrap}
+  .port-picker summary::-webkit-details-marker,.port-picker summary::marker{display:none; content:''}
+  .port-panel{position:absolute; right:0; top:calc(100% + .35rem); z-index:10; width:260px; background:var(--card); border:1px solid var(--border); border-radius:8px; box-shadow:0 6px 24px var(--shadow); padding:.5rem; display:flex; flex-direction:column; gap:.4rem}
+  .port-list{max-height:220px; overflow:auto; display:flex; flex-direction:column; gap:.1rem}
+  .port-list label{display:flex; align-items:center; gap:.4rem; font-size:.8rem; padding:.15rem .2rem; border-radius:4px; cursor:pointer; white-space:nowrap}
+  .port-list label:hover{background:var(--hover)}
+  .port-clear{align-self:flex-start; background:none; border:none; color:var(--chart); font-size:.75rem; cursor:pointer; padding:0}
   /* fixed-height box so Chart.js measures a stable parent (no runaway growth) */
   .chart-box{position:relative; height:260px}
   canvas{width:100%; height:100%}
@@ -89,6 +102,8 @@
     .select{max-width:none}
     .charts{grid-template-columns:1fr; margin-top:1rem}
     .chart-box{height:240px}
+    /* keep the port dropdown inside the viewport when anchored near the left edge */
+    .port-panel{left:0; right:auto; width:min(260px, calc(100vw - 2rem))}
     table{font-size:.8rem}
     th,td{padding:.45rem .5rem}
     .hint{white-space:normal}
@@ -117,7 +132,7 @@
     </div>
 
     <div class="bar">
-      <input class="input" type="text" id="searchInput" placeholder="Search… (ID, client, company, vessel, port)" />
+      <input class="input" type="text" id="searchInput" placeholder="Search… (ID, date, client, company, vessel, port)" />
       <select class="select" id="clientFilter"><option value="">All clients</option></select>
       <button class="btn" id="applyFilter">Apply</button>
     </div>
@@ -141,7 +156,17 @@
 
     <div class="charts">
       <div class="chart-card"><h3>Cost &amp; Load by Client</h3><div class="chart-box"><canvas id="chartClient"></canvas></div></div>
-      <div class="chart-card"><h3>Volume by Month</h3><div class="chart-box"><canvas id="chartMonth"></canvas></div></div>
+      <div class="chart-card">
+        <div class="chart-head">
+          <h3>Volume over Time</h3>
+          <select class="select select-sm" id="volumeGrain" title="Group shipments by">
+            <option value="month">Monthly</option>
+            <option value="week">Weekly</option>
+            <option value="day">Daily</option>
+          </select>
+        </div>
+        <div class="chart-box"><canvas id="chartMonth"></canvas></div>
+      </div>
       <div class="chart-card"><h3>Shipments Over Time (Daily)</h3><div class="chart-box"><canvas id="chartDaily"></canvas></div></div>
     </div>
   </section>
@@ -159,7 +184,27 @@
       <div class="pagination" id="gPagination"></div>
     </div>
     <div class="charts hidden" id="gCharts">
-      <div class="chart-card"><h3 id="gChartTitle"></h3><div class="chart-box"><canvas id="gChart"></canvas></div></div>
+      <div class="chart-card">
+        <div class="chart-head">
+          <h3 id="gChartTitle"></h3>
+          <div class="chart-controls hidden" id="portControls">
+            <details class="port-picker" id="portPicker">
+              <summary id="portPickerBtn">Top 5 ports ▾</summary>
+              <div class="port-panel">
+                <input class="input" type="text" id="portSearch" placeholder="Search ports…" />
+                <div class="port-list" id="portList"></div>
+                <button type="button" class="port-clear" id="portClear">Clear (top 5)</button>
+              </div>
+            </details>
+            <select class="select select-sm" id="portGrain" title="Group traffic by">
+              <option value="week" selected>Weekly</option>
+              <option value="day">Daily</option>
+              <option value="month">Monthly</option>
+            </select>
+          </div>
+        </div>
+        <div class="chart-box"><canvas id="gChart"></canvas></div>
+      </div>
     </div>
   </section>
 
@@ -202,6 +247,8 @@
       // ── state
       const data = {};                                             // table -> rows
       const view = {};                                             // tab -> {page, q}
+      let allRows = [];                                            // joined shipments, reused by tables + charts
+      const selectedPorts = new Set();                             // ports ticked in the Ports tab picker
       TABS.forEach(t => { view[t.id] = { page: 1, q: '' }; });
       let activeTab = 'shipments';
       let drill = null;                                            // active drill-down {key,id,name}
@@ -231,6 +278,7 @@
       }
       // Chart.js reads these globals for ticks/gridlines, so one call re-themes every chart
       function applyChartDefaults() {
+        if (!window.Chart) return;   // the CDN script may still be loading
         const c = themeVars();
         Chart.defaults.color = c.text;
         Chart.defaults.borderColor = c.grid;
@@ -261,8 +309,10 @@
         try {
           const results = await Promise.all(TABS.map(t => fetchAll(t.table)));
           TABS.forEach((t, i) => { data[t.id] = results[i]; });
+          allRows = joinedShipments();
           lastUpdated.textContent = new Date().toLocaleTimeString();
           populateClients();
+          populatePorts();
           renderTabs();
           renderActive();
         } catch (err) {
@@ -304,6 +354,19 @@
         renderActive();
       }
 
+      // ── jump to the Ports tab focused on one port (clicked in the route column)
+      function showPort(id) {
+        selectedPorts.clear();
+        selectedPorts.add(String(id));
+        document.querySelectorAll('#portList input').forEach(i => { i.checked = i.value === String(id); });
+        document.getElementById('portSearch').value = '';
+        document.querySelectorAll('#portList label').forEach(l => { l.style.display = ''; });
+        updatePortPickerLabel();
+        activeTab = 'ports';
+        renderTabs();
+        renderActive();
+      }
+
       // ── client dropdown (once)
       function populateClients() {
         const current = clientFilter.value;
@@ -318,6 +381,23 @@
           clientFilter.appendChild(o);
         });
         clientFilter.value = current;
+      }
+
+      // ── port picker (once): searchable checkbox list used for comparison
+      function populatePorts() {
+        const ports = (data.ports || [])
+          .filter(p => p.Port_Name)
+          .sort((a, b) => a.Port_Name.localeCompare(b.Port_Name));
+        document.getElementById('portList').innerHTML = ports.map(p =>
+          `<label><input type="checkbox" value="${p.PortID}"${selectedPorts.has(String(p.PortID)) ? ' checked' : ''}> ${p.Port_Name}</label>`
+        ).join('');
+        updatePortPickerLabel();
+      }
+
+      function updatePortPickerLabel() {
+        const n = selectedPorts.size;
+        document.getElementById('portPickerBtn').textContent =
+          n === 0 ? 'Top 5 ports ▾' : `${n} port${n > 1 ? 's' : ''} ▾`;
       }
 
       // ── fast lookups for the star-schema joins
@@ -356,7 +436,7 @@
 
       // ── Shipments tab
       function renderShipments() {
-        let rows = joinedShipments();
+        let rows = allRows;
 
         // KPIs (always over the whole dataset, not the filtered slice)
         const total = rows.length;
@@ -371,8 +451,10 @@
         if (q) {
           rows = rows.filter(r =>
             String(r.ShipmentID).includes(q) ||
+            (r.date || '').includes(q) ||
             (r.clientName || '').toLowerCase().includes(q) ||
             (r.clientCompany || '').toLowerCase().includes(q) ||
+            (r.companyName || '').toLowerCase().includes(q) ||
             (r.vessel || '').toLowerCase().includes(q) ||
             (r.portFrom || '').toLowerCase().includes(q) ||
             (r.portTo || '').toLowerCase().includes(q)
@@ -393,6 +475,8 @@
 
         const tbody = document.querySelector('#shipmentsTable tbody');
         tbody.onclick = (e) => {
+          const port = e.target.closest('[data-port]');
+          if (port) { showPort(port.dataset.port); return; }
           const el = e.target.closest('[data-key]');
           if (el) setDrill(el.dataset.key, el.dataset.id, el.dataset.name);
         };
@@ -400,6 +484,9 @@
         const chip = (key, id, name, text) => id == null
           ? text
           : `<span class="badge word-link" data-key="${key}" data-id="${id}" data-name="${name}">${text}</span>`;
+        const portChip = (id, name) => id == null
+          ? name
+          : `<span class="badge word-link" data-port="${id}">${name}</span>`;
         tbody.innerHTML = slice.length
           ? slice.map((r, i) => `
               <tr>
@@ -409,7 +496,7 @@
                 <td>${chip('ClientID', r.ClientID, r.clientName, r.clientName)}</td>
                 <td>${chip('CompanyID', r.CompanyID, r.companyName, r.companyName)}</td>
                 <td>${chip('ShipID', r.ShipID, r.vessel, r.vessel)}</td>
-                <td class="route">${r.portFrom} → ${r.portTo}</td>
+                <td class="route">${portChip(r.PortDeparture, r.portFrom)} → ${portChip(r.PortArrival, r.portTo)}</td>
                 <td>${Number(r.ShipmentLoad_Tonnes || 0).toLocaleString()}</td>
                 <td>${Number(r.ShipmentTotalCost || 0).toLocaleString()}</td>
                 <td>${Number(r.DistanceTravelled_Nautical_Miles || 0).toLocaleString()}</td>
@@ -419,7 +506,7 @@
         renderPager('pagination', p.page, totalPages, (n) => { view.shipments.page = n; renderShipments(); }, rows.length, slice.length);
 
         drawClientChart(rows);
-        drawMonthChart(rows);
+        drawVolumeChart(rows);
         drawDailyChart(rows);
       }
 
@@ -455,33 +542,74 @@
         });
       }
 
-      // ── chart: shipment volume by month
-      function drawMonthChart(rows) {
-        const agg = {};
+      // ── time buckets shared by every trend chart; gaps stay on the axis as 0
+      const GRAINS = {
+        month: { key: d => d.slice(0, 7), label: k => k },
+        // weeks start Monday, keyed/labelled by that date
+        week: {
+          key: d => {
+            const x = new Date(d + 'T00:00:00Z');
+            x.setUTCDate(x.getUTCDate() - ((x.getUTCDay() + 6) % 7));
+            return x.toISOString().slice(0, 10);
+          },
+          label: k => 'W ' + k.slice(5)
+        },
+        day: { key: d => d, label: k => k.slice(5) }
+      };
+
+      // full bucket list across the whole dataset, so filtered charts keep the same x-axis
+      function bucketKeys(grain) {
+        const dates = allRows.map(r => r.date).filter(Boolean).sort();
+        if (!dates.length) return [];
+        const start = GRAINS[grain].key(dates[0]);
+        const end = GRAINS[grain].key(dates[dates.length - 1]);
+        const out = [];
+        if (grain === 'month') {
+          for (const d = new Date(start + '-01T00:00:00Z'), e = new Date(end + '-01T00:00:00Z'); d <= e; d.setUTCMonth(d.getUTCMonth() + 1)) {
+            out.push(d.toISOString().slice(0, 7));
+          }
+          return out;
+        }
+        const step = grain === 'week' ? 7 : 1;
+        for (const d = new Date(start + 'T00:00:00Z'), e = new Date(end + 'T00:00:00Z'); d <= e; d.setUTCDate(d.getUTCDate() + step)) {
+          out.push(d.toISOString().slice(0, 10));
+        }
+        return out;
+      }
+
+      function countsByBucket(rows, grain) {
+        const g = GRAINS[grain];
+        const keys = bucketKeys(grain);
+        const counts = new Map();
         rows.forEach(r => {
-          const m = (r.date || '').slice(0, 7);
-          if (!m) return;
-          agg[m] = (agg[m] || 0) + 1;
+          if (!r.date) return;
+          const k = g.key(r.date);
+          counts.set(k, (counts.get(k) || 0) + 1);
         });
-        const labels = Object.keys(agg).sort();
+        return { keys, data: keys.map(k => counts.get(k) || 0) };
+      }
+
+      // ── chart: shipment volume by month / week / day (selector)
+      function drawVolumeChart(rows) {
+        const grain = document.getElementById('volumeGrain').value;
+        const { keys, data } = countsByBucket(rows, grain);
 
         if (chartMonth) chartMonth.destroy();
         const c = themeVars();
         chartMonth = new Chart(document.getElementById('chartMonth'), {
           type: 'line',
           data: {
-            labels,
-            datasets: [{ label: 'Shipments', data: labels.map(l => agg[l]), borderColor: c.chart, backgroundColor: alpha(c.chart, .15), fill: true, tension: .3 }]
+            labels: keys.map(GRAINS[grain].label),
+            datasets: [{ label: 'Shipments', data, borderColor: c.chart, backgroundColor: alpha(c.chart, .15), fill: true, tension: .3, pointRadius: 2 }]
           },
-          options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
+          options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
         });
       }
 
-      // ── chart: shipments per day
+      // ── chart: shipments per day (zero-filled so drill-downs stay continuous)
       function drawDailyChart(rows) {
-        const agg = {};
-        rows.forEach(r => { if (r.date) agg[r.date] = (agg[r.date] || 0) + 1; });
-        const labels = Object.keys(agg).sort();
+        const { data } = countsByBucket(rows, 'day');
+        const labels = bucketKeys('day');
 
         if (chartDaily) chartDaily.destroy();
         const c = themeVars();
@@ -489,7 +617,7 @@
           type: 'line',
           data: {
             labels,
-            datasets: [{ label: 'Shipments', data: labels.map(l => agg[l]), borderColor: c.chart, backgroundColor: alpha(c.chart, .1), fill: true, tension: .3, pointRadius: 2 }]
+            datasets: [{ label: 'Shipments', data, borderColor: c.chart, backgroundColor: alpha(c.chart, .1), fill: true, tension: .3, pointRadius: 2 }]
           },
           options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
         });
@@ -503,8 +631,10 @@
       };
 
       function renderDimChart(tabId) {
-        // ports use a dedicated multi-series line chart
-        if (tabId === 'ports') { document.getElementById('gCharts').classList.remove('hidden'); drawPortChart(); return; }
+        // ports use a dedicated line chart with its own port/grain controls
+        const isPorts = tabId === 'ports';
+        document.getElementById('portControls').classList.toggle('hidden', !isPorts);
+        if (isPorts) { document.getElementById('gCharts').classList.remove('hidden'); drawPortChart(); return; }
         const spec = DIM_CHARTS[tabId];
         document.getElementById('gCharts').classList.toggle('hidden', !spec);
         if (!spec) {
@@ -514,7 +644,7 @@
         document.getElementById('gChartTitle').textContent = spec.title;
 
         const byId = new Map();
-        joinedShipments().forEach(r => {
+        allRows.forEach(r => {
           const id = r[spec.key];
           if (id == null) return;
           const e = byId.get(id) || { name: r[spec.name], total: 0 };
@@ -540,39 +670,46 @@
         });
       }
 
-      // ── ports: top-5 port traffic over time (departures + arrivals per month)
+      // ── ports: selected ports (or top 5) over continuous weekly/daily/monthly buckets
       function drawPortChart() {
-        document.getElementById('gChartTitle').textContent = 'Port Traffic Over Time';
-
-        const months = new Set();
-        const perPort = new Map();   // port name -> { 'YYYY-MM': calls }
-        const add = (port, m) => {
-          if (!port || !m) return;
-          months.add(m);
-          const e = perPort.get(port) || {};
-          e[m] = (e[m] || 0) + 1;
-          perPort.set(port, e);
-        };
-        joinedShipments().forEach(r => {
-          const m = (r.date || '').slice(0, 7);
-          add(r.portFrom, m);
-          add(r.portTo, m);
+        const grain = document.getElementById('portGrain').value;
+        const g = GRAINS[grain];
+        const keys = bucketKeys(grain);
+        const nameById = new Map((data.ports || []).map(p => [String(p.PortID), p.Port_Name]));
+        const perPort = new Map();   // port id -> Map(bucket -> calls)
+        const totals = new Map();
+        allRows.forEach(r => {
+          if (!r.date) return;
+          const k = g.key(r.date);
+          for (const id of [r.PortDeparture, r.PortArrival]) {
+            if (id == null) continue;
+            const key = String(id);
+            const e = perPort.get(key) || new Map();
+            e.set(k, (e.get(k) || 0) + 1);
+            perPort.set(key, e);
+            totals.set(key, (totals.get(key) || 0) + 1);
+          }
         });
-        const labels = [...months].sort();
-        const top = [...perPort.entries()]
-          .map(([name, e]) => ({ name, total: Object.values(e).reduce((a, b) => a + b, 0), e }))
-          .sort((a, b) => b.total - a.total).slice(0, 5);
+
+        // no ticks = the 5 busiest ports; otherwise exactly the ticked ports
+        const ids = selectedPorts.size
+          ? [...selectedPorts]
+          : [...totals.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([id]) => id);
+
+        const single = ids.length === 1 ? nameById.get(ids[0]) : null;
+        document.getElementById('gChartTitle').textContent =
+          single ? `Port Traffic — ${single}` : 'Port Traffic Over Time';
 
         const c = themeVars();
-        const palette = [c.chart, c.ok, '#a855f7', c.warn, '#06b6d4'];
+        const palette = [c.chart, c.ok, '#a855f7', c.warn, '#06b6d4', '#f43f5e', '#84cc16', '#6366f1', '#ec4899', '#14b8a6'];
         if (chartDim) chartDim.destroy();
         chartDim = new Chart(document.getElementById('gChart'), {
           type: 'line',
           data: {
-            labels,
-            datasets: top.map((p, i) => ({
-              label: p.name,
-              data: labels.map(m => p.e[m] || 0),
+            labels: keys.map(g.label),
+            datasets: ids.map((id, i) => ({
+              label: nameById.get(id) || `PortID ${id}`,
+              data: keys.map(k => (perPort.get(id) || new Map()).get(k) || 0),
               borderColor: palette[i % palette.length],
               backgroundColor: alpha(palette[i % palette.length], .12),
               tension: .3, pointRadius: 2, fill: false
@@ -580,8 +717,8 @@
           },
           options: {
             responsive: true, maintainAspectRatio: false,
-            plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 12 } } },
-            scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+            plugins: { legend: { display: ids.length > 1, position: 'bottom', labels: { boxWidth: 12 } } },
+            scales: { y: { beginAtZero: true, ticks: { precision: 0 } }, x: { ticks: { autoSkip: true, maxRotation: 0 } } }
           }
         });
       }
@@ -683,6 +820,29 @@
       searchInput.addEventListener('input', () => { view.shipments.page = 1; renderShipments(); });
       document.getElementById('applyFilter').addEventListener('click', () => { view.shipments.page = 1; renderShipments(); });
       clientFilter.addEventListener('change', () => { view.shipments.page = 1; renderShipments(); });
+      document.getElementById('volumeGrain').addEventListener('change', renderShipments);
+
+      // ── port picker: search-filter the list, tick ports to compare
+      document.getElementById('portSearch').addEventListener('input', (e) => {
+        const q = e.target.value.trim().toLowerCase();
+        document.querySelectorAll('#portList label').forEach(l => {
+          l.style.display = l.textContent.toLowerCase().includes(q) ? '' : 'none';
+        });
+      });
+      document.getElementById('portList').addEventListener('change', (e) => {
+        if (e.target.type !== 'checkbox') return;
+        if (e.target.checked) selectedPorts.add(e.target.value); else selectedPorts.delete(e.target.value);
+        updatePortPickerLabel();
+        drawPortChart();
+      });
+      document.getElementById('portClear').addEventListener('click', () => {
+        selectedPorts.clear();
+        document.querySelectorAll('#portList input').forEach(i => { i.checked = false; });
+        updatePortPickerLabel();
+        drawPortChart();
+      });
+      document.getElementById('portGrain').addEventListener('change', drawPortChart);
+
       document.getElementById('gSearch').addEventListener('input', (e) => {
         view[activeTab].q = e.target.value;
         view[activeTab].page = 1;

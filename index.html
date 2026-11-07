@@ -442,6 +442,51 @@
         <div class="chart-head"><h3>Summary</h3></div>
         <div id="q1Summary"></div>
       </div>
+
+      <div class="chart-card question-card" id="question-2">
+        <div class="chart-head">
+          <h3>2 · Company totals</h3>
+          <span class="hint" id="q2Meta">—</span>
+        </div>
+        <p class="q-text">What is the Overall total of the shipment load and travel distance of the company Apex Lines 10?</p>
+        <div class="table-wrap">
+          <table id="q2Table">
+            <thead><tr><th>Company Name</th><th>Total shipment load (Tonnes)</th><th>Total travel distance (Nautical Miles)</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="summary-note">Apex Lines 10 accumulated a total of 49,947.46 Tonnes of shipment load and a travel distance of 8024.49 Nautical Miles.</p>
+      </div>
+
+      <div class="chart-card question-card" id="question-3">
+        <div class="chart-head">
+          <h3>3 · Client companies</h3>
+          <span class="hint" id="q3Meta">—</span>
+        </div>
+        <p class="q-text">Who are the companies responsible for the client Alice Miller?</p>
+        <div class="table-wrap">
+          <table id="q3Table">
+            <thead><tr><th>CompanyID</th><th>Company Name</th><th>Company CEO</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="summary-note">The company that has collaborated with the client Alice Miller, is Meridian Lines 659 with only one shipment record.</p>
+      </div>
+
+      <div class="chart-card question-card" id="question-4">
+        <div class="chart-head">
+          <h3>4 · Port departures · September 2026</h3>
+          <span class="hint" id="q4Meta">—</span>
+        </div>
+        <p class="q-text">Port Singapore Pier 9, who departed with pier 9 and who are the clients and what ships on September 2026?</p>
+        <div class="table-wrap">
+          <table id="q4Table">
+            <thead><tr><th>Port Name</th><th>Ship ID</th><th>Vessel</th><th>ClientID</th><th>Client Name</th><th>Departure date</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="summary-note">For the month of September 2026, Port Singapore Pier 9 has had two departures with clients Bea Flores on September 1st on the vessel Maersk Atlantic 459 and Albert Miranda on September 9th on the vessel MSC Ocean 34.</p>
+      </div>
     </div>
   </section>
 
@@ -1188,7 +1233,7 @@
         }).join('') + (items.length > shown.length ? `<div class="anomaly-more">Showing first ${shown.length} of ${items.length}.</div>` : '');
       }
 
-      // ── Questions tab: August 2026 aggregates for the midterm question set
+      // ── Questions tab: one aggregation per assignment question
       const QUESTION_MONTH = '2026-08';   // month hard-coded in the assignment SQL
 
       function renderQuestions() {
@@ -1250,6 +1295,55 @@
             </tbody>
           </table>
           <p class="summary-note">A total of ${n(shipRows.length)} Ships, ${n(companyRows.length)} Companies, and ${n(clientRows.length)} Clients are involved in the shipment records for the month of August, 2026. The total shipping costs is amounted at $${totalFmt}.</p>`;
+
+        // Q2: load + distance totals for one company (name fixed by the SQL)
+        const fmt2 = v => Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const apex = allRows.filter(r => (r.companyName || '').toLowerCase() === 'apex lines 10');
+        const load = apex.reduce((a, r) => a + (Number(r.ShipmentLoad_Tonnes) || 0), 0);
+        const dist = apex.reduce((a, r) => a + (Number(r.DistanceTravelled_Nautical_Miles) || 0), 0);
+        document.getElementById('q2Meta').textContent = `${apex.length.toLocaleString()} shipments`;
+        document.querySelector('#q2Table tbody').innerHTML = apex.length
+          ? `<tr><td>${apex[0].companyName}</td><td>${fmt2(load)}</td><td>${fmt2(dist)}</td></tr>`
+          : '<tr><td colspan="3" class="empty">No shipments for Apex Lines 10.</td></tr>';
+
+        // Q3: distinct companies that shipped for one client, with the CEO from CompanyDIM
+        const alice = allRows.filter(r => (r.clientName || '').toLowerCase() === 'alice miller');
+        const companyById = indexBy(data.companies, 'CompanyID');
+        const aliceCompanies = [...new Set(alice.map(r => r.CompanyID))]
+          .sort((a, b) => (Number(a) || 0) - (Number(b) || 0))
+          .map(id => {
+            const c = companyById.get(id);
+            return { id, name: c ? c.Company_Name : `CompanyID ${id}`, ceo: c ? c.Company_CEO : '—' };
+          });
+        document.getElementById('q3Meta').textContent = `${aliceCompanies.length.toLocaleString()} compan${aliceCompanies.length === 1 ? 'y' : 'ies'}`;
+        document.querySelector('#q3Table tbody').innerHTML = aliceCompanies.length
+          ? aliceCompanies.map(c => `<tr><td>${c.id}</td><td>${c.name}</td><td>${c.ceo}</td></tr>`).join('')
+          : '<tr><td colspan="3" class="empty">No companies for Alice Miller.</td></tr>';
+
+        // Q4: September departures from the Singapore / Pier 9 ports, distinct like the SQL
+        const seenSept = new Set();
+        const septRows = allRows
+          .filter(r => {
+            if ((r.date || '').slice(0, 7) !== '2026-09') return false;
+            const port = (r.portFrom || '').toLowerCase();
+            if (!port.includes('singapore') && !port.includes('pier 9')) return false;
+            const k = `${r.portFrom}|${r.ShipID}|${r.vessel}|${r.ClientID}|${r.date}`;
+            if (seenSept.has(k)) return false;
+            seenSept.add(k);
+            return true;
+          })
+          .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+        document.getElementById('q4Meta').textContent = `${septRows.length.toLocaleString()} departures`;
+        document.querySelector('#q4Table tbody').innerHTML = septRows.length
+          ? septRows.map(r => `<tr>
+              <td>${r.portFrom}</td>
+              <td>${r.ShipID}</td>
+              <td>${r.vessel}</td>
+              <td>${r.ClientID}</td>
+              <td>${r.clientName}</td>
+              <td>${r.date}</td>
+            </tr>`).join('')
+          : '<tr><td colspan="6" class="empty">No departures in September 2026.</td></tr>';
 
         syncScrollButtons();
       }

@@ -25,12 +25,16 @@
   header{padding:1rem 1.5rem; background:var(--card); margin:1rem 0 1rem; border-radius:8px; box-shadow:0 1px 2px var(--shadow)}
   .header-title{font-size:1.25rem; font-weight:600; display:flex;align-items:center;gap:.5rem}
   .sub{font-size:.85rem; color:var(--muted); display:flex; align-items:center; gap:.4rem}
-  /* Tabs */
-  .tabs{display:flex; flex-wrap:wrap; gap:.25rem; border-bottom:2px solid var(--border); margin-bottom:1rem}
+  /* Tabs: the bar holds Home/Tables/Anomalies plus the table picker on the right */
+  .tabbar{display:flex; align-items:center; gap:.5rem; border-bottom:2px solid var(--border); margin-bottom:1rem}
+  .tabs{display:flex; flex-wrap:wrap; gap:.25rem}
+  /* table picker: bigger and filled so it stands apart from the tab row */
+  #tablePicker{margin-left:auto; min-width:210px; padding:.55rem .8rem; font-size:.9rem; font-weight:600; border:2px solid var(--btn-bg); border-radius:6px; background:var(--btn-bg); color:var(--btn-fg); box-shadow:0 1px 2px var(--shadow); cursor:pointer}
+  #tablePicker:hover{background:var(--btn-bg-hover); border-color:var(--btn-bg-hover)}
+  #tablePicker:focus-visible{outline:2px solid var(--chart); outline-offset:2px}
   .tab{padding:.6rem 1.1rem; border:1px solid transparent; border-bottom:none; border-radius:8px 8px 0 0; background:transparent; color:var(--muted); font-size:.9rem; font-weight:500; cursor:pointer; position:relative; top:2px}
   .tab:hover{background:var(--hover); color:var(--accent)}
   .tab.active{background:var(--card); border-color:var(--border); color:var(--accent); font-weight:600}
-  .tab .count{font-size:.7rem; color:var(--muted); margin-left:.35rem}
   /* KPI */
   .kpi-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1rem; margin-bottom:1.25rem}
   .kpi-card{background:var(--card); border:1px solid var(--border); border-radius:8px; padding:1rem; text-align:center; min-height:80px; display:flex;flex-direction:column;justify-content:center}
@@ -48,7 +52,14 @@
   .select{padding:.6rem .8rem; border:1px solid var(--border); border-radius:6px; background:var(--card); color:inherit; cursor:pointer; max-width:240px}
   .btn{padding:.6rem 1rem; background:var(--btn-bg); color:var(--btn-fg); border:none; border-radius:6px; font-size:.9rem; cursor:pointer; white-space:nowrap}
   .btn:hover{background:var(--btn-bg-hover)}
-  .theme-toggle{padding:.6rem .8rem; font-size:1rem; line-height:1}
+  /* gear menu in the header: same <details> dropdown pattern as the port picker */
+  .settings{position:relative}
+  .settings summary{list-style:none; cursor:pointer; width:2.1rem; height:2.1rem; display:flex; align-items:center; justify-content:center; border:1px solid var(--border); border-radius:6px; background:var(--card); font-size:1rem; line-height:1}
+  .settings summary::-webkit-details-marker,.settings summary::marker{display:none; content:''}
+  .settings summary:hover,.settings[open] summary{background:var(--hover)}
+  .settings-panel{position:absolute; right:0; top:calc(100% + .35rem); z-index:10; min-width:180px; background:var(--card); border:1px solid var(--border); border-radius:8px; box-shadow:0 6px 24px var(--shadow); padding:.35rem; display:flex; flex-direction:column; gap:.15rem}
+  .settings-item{display:flex; align-items:center; gap:.5rem; width:100%; padding:.5rem .6rem; border:none; border-radius:6px; background:none; color:var(--accent); font-family:inherit; font-size:.85rem; text-align:left; cursor:pointer}
+  .settings-item:hover{background:var(--hover)}
   .hint{font-size:.8rem; color:var(--muted); white-space:nowrap}
   /* Table */
   .table-wrap{background:var(--card); border:1px solid var(--border); border-radius:8px 8px 0 0; overflow-x:auto}
@@ -90,6 +101,20 @@
   /* fixed-height box so Chart.js measures a stable parent (no runaway growth) */
   .chart-box{position:relative; height:260px}
   canvas{width:100%; height:100%}
+  /* Anomalies tab: chart card above the explanation list */
+  .stack{display:flex; flex-direction:column; gap:1rem}
+  .anomaly-item{padding:.75rem 0; border-top:1px solid var(--border)}
+  .anomaly-item:first-child{border-top:none; padding-top:0}
+  /* clicked-point highlight: holds ~1.5s, then fades, no timer needed */
+  .anomaly-item.flash{animation:anomaly-flash 2.5s ease}
+  @keyframes anomaly-flash{0%{background:var(--hover); border-radius:6px}60%{background:var(--hover); border-radius:6px}100%{background:transparent; border-radius:6px}}
+  .anomaly-head{display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; font-size:.9rem}
+  .anomaly-badge{display:inline-block; padding:.12rem .4rem; border-radius:4px; font-size:.72rem; font-weight:600; text-transform:uppercase; letter-spacing:.04em}
+  .anomaly-badge.spike{background:var(--err); color:#fff}
+  .anomaly-badge.dip{background:var(--warn); color:#1f2937}
+  .anomaly-why{font-size:.82rem; color:var(--muted); margin-top:.25rem}
+  .anomaly-why strong{color:var(--accent)}
+  .anomaly-more{font-size:.8rem; color:var(--muted); margin-top:.5rem}
   .hidden{display:none}
   .empty{padding:2rem; text-align:center; color:var(--muted)}
   /* ── phone layout ── */
@@ -97,9 +122,12 @@
     body{padding:0 .5rem 1.5rem}
     header{padding:.75rem 1rem; margin:.5rem 0 .75rem}
     .header-title{font-size:1.05rem; flex-wrap:wrap; row-gap:.25rem}
-    /* overrides the inline margin-left:auto on the "Last updated" span */
-    .header-title .sub{margin-left:0 !important; flex-basis:100%}
-    .tabs{flex-wrap:nowrap; overflow-x:auto; margin-bottom:.75rem}
+    /* gear keeps the first row with the title; the timestamp drops below it */
+    .header-title .settings{order:2; margin-left:auto}
+    .header-title .sub{order:3; margin-left:0 !important; flex-basis:100%}
+    .tabbar{flex-wrap:wrap; margin-bottom:.75rem}
+    .tabbar .tabs{flex-wrap:nowrap; overflow-x:auto; overflow-y:hidden; flex-basis:100%}
+    #tablePicker{margin-left:0; width:100%}
     .tab{padding:.5rem .75rem; font-size:.85rem; top:1px; white-space:nowrap}
     .kpi-strip{grid-template-columns:repeat(2,1fr); gap:.5rem; margin-bottom:1rem}
     .kpi-card{padding:.75rem; min-height:64px}
@@ -121,13 +149,22 @@
   <header>
     <div class="header-title">
       <span>Sea Door Shipments</span>
-      <button class="btn theme-toggle" id="themeBtn" title="Toggle light/dark theme">🌙</button>
-      <button class="btn" id="refreshBtn">Refresh</button>
       <span class="sub" style="margin-left:auto">Last updated: <span id="lastUpdated">—</span></span>
+      <details class="settings" id="settings">
+        <summary title="Settings" aria-label="Settings">⚙️</summary>
+        <div class="settings-panel">
+          <button type="button" class="settings-item" id="themeBtn" title="Toggle light/dark theme">🌙 Dark mode</button>
+          <button type="button" class="settings-item" id="refreshBtn">↻ Refresh data</button>
+        </div>
+      </details>
     </div>
   </header>
 
-  <nav class="tabs" id="tabs"></nav>
+  <div class="tabbar">
+    <nav class="tabs" id="tabs"></nav>
+    <!-- only visible inside the Tables tab; options are the six dimension tables -->
+    <select class="select select-sm hidden" id="tablePicker" title="Choose table"></select>
+  </div>
 
   <!-- ── Home dashboard ── -->
   <section id="panel-home">
@@ -194,9 +231,9 @@
         <div class="chart-head">
           <h3>Income from Costs</h3>
           <select class="select select-sm" id="hIncomeGrain" title="Group income by">
-            <option value="month" selected>Monthly</option>
+            <option value="month">Monthly</option>
             <option value="week">Weekly</option>
-            <option value="day">Daily</option>
+            <option value="day" selected>Daily</option>
           </select>
         </div>
         <div class="chart-box"><canvas id="hIncome"></canvas></div>
@@ -250,9 +287,9 @@
         <div class="chart-head">
           <h3>Shipments over Time</h3>
           <select class="select select-sm" id="volumeGrain" title="Group shipments by">
-            <option value="month" selected>Monthly</option>
+            <option value="month">Monthly</option>
             <option value="week">Weekly</option>
-            <option value="day">Daily</option>
+            <option value="day" selected>Daily</option>
           </select>
         </div>
         <div class="chart-box"><canvas id="chartMonth"></canvas></div>
@@ -261,9 +298,9 @@
         <div class="chart-head">
           <h3>Income from Costs</h3>
           <select class="select select-sm" id="incomeGrain" title="Group income by">
-            <option value="month" selected>Monthly</option>
+            <option value="month">Monthly</option>
             <option value="week">Weekly</option>
-            <option value="day">Daily</option>
+            <option value="day" selected>Daily</option>
           </select>
         </div>
         <div class="chart-box"><canvas id="chartIncome"></canvas></div>
@@ -305,6 +342,23 @@
           </div>
         </div>
         <div class="chart-box"><canvas id="gChart"></canvas></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Anomalies panel: daily income line with flagged days + plain-English list ── -->
+  <section id="panel-anomalies" class="hidden">
+    <div class="stack">
+      <div class="chart-card">
+        <div class="chart-head">
+          <h3>Income from Costs · daily</h3>
+          <span class="hint" id="anomalySummary">—</span>
+        </div>
+        <div class="chart-box"><canvas id="anomalyIncome"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-head"><h3>Anomalies</h3></div>
+        <div id="anomalyList"></div>
       </div>
     </div>
   </section>
@@ -352,7 +406,8 @@
       const selectedPorts = new Set();                             // ports ticked in the Ports tab picker
       const selectedMonths = new Set();                            // months ticked in the Weekday chart picker (empty = all)
       TABS.forEach(t => { view[t.id] = { page: 1, q: '', showTable: false }; });
-      let activeTab = 'home';
+      let activeTab = 'home';                                      // home | tables | anomalies
+      let activeSub = 'shipments';                                 // which table is open inside Tables
       let drill = null;                                            // active drill-down {key,id,name}
       let theme = localStorage.getItem('theme') === 'dark' ? 'dark' : 'light';
       const charts = new Map();                                    // canvas id -> Chart instance
@@ -365,9 +420,12 @@
 
       // ── DOM
       const tabsEl = document.getElementById('tabs');
+      const tablePicker = document.getElementById('tablePicker');
       const panelHome = document.getElementById('panel-home');
       const panelShipments = document.getElementById('panel-shipments');
       const panelGeneric = document.getElementById('panel-generic');
+      const panelAnomalies = document.getElementById('panel-anomalies');
+      const settingsEl = document.getElementById('settings');
       const lastUpdated = document.getElementById('lastUpdated');
       const clientFilter = document.getElementById('clientFilter');
       const searchInput = document.getElementById('searchInput');
@@ -436,38 +494,46 @@
         }
       }
 
-      // ── tab bar
+      // ── top tab bar: three sections; the six tables live inside Tables
       function renderTabs() {
         tabsEl.innerHTML = '';
-        const home = document.createElement('button');
-        home.className = 'tab' + (activeTab === 'home' ? ' active' : '');
-        home.textContent = 'Home';
-        home.onclick = () => { activeTab = 'home'; renderTabs(); renderActive(); };
-        tabsEl.appendChild(home);
-
-        TABS.forEach(t => {
+        const top = [
+          { id: 'home', label: 'Home' },
+          { id: 'tables', label: 'Tables' },
+          { id: 'anomalies', label: 'Anomalies' }
+        ];
+        top.forEach(t => {
           const b = document.createElement('button');
           b.className = 'tab' + (t.id === activeTab ? ' active' : '');
-          b.innerHTML = `${t.label}<span class="count">${(data[t.id] || []).length}</span>`;
-          b.onclick = () => {
-            activeTab = t.id;
-            renderTabs();
-            renderActive();
-          };
+          b.textContent = t.label;
+          b.onclick = () => { activeTab = t.id; renderTabs(); renderActive(); };
           tabsEl.appendChild(b);
         });
+
+        // picker options carry per-table row counts, matching the old tab badges
+        tablePicker.innerHTML = TABS.map(t =>
+          `<option value="${t.id}">${t.label} (${(data[t.id] || []).length.toLocaleString()})</option>`
+        ).join('');
+        tablePicker.value = activeSub;
+        tablePicker.classList.toggle('hidden', activeTab !== 'tables');
       }
 
       function renderActive() {
         applyChartDefaults();
         const isHome = activeTab === 'home';
-        const isShipments = activeTab === 'shipments';
+        const isTables = activeTab === 'tables';
+        const isAnomalies = activeTab === 'anomalies';
         panelHome.classList.toggle('hidden', !isHome);
-        panelShipments.classList.toggle('hidden', !isShipments);
-        panelGeneric.classList.toggle('hidden', isHome || isShipments);
+        // only the picker's current table is visible; shipments has its own panel
+        panelShipments.classList.toggle('hidden', !(isTables && activeSub === 'shipments'));
+        panelGeneric.classList.toggle('hidden', !(isTables && activeSub !== 'shipments'));
+        panelAnomalies.classList.toggle('hidden', !isAnomalies);
         if (isHome) renderHome();
-        else if (isShipments) renderShipments();
-        else renderGeneric(activeTab);
+        else if (isAnomalies) renderAnomalies();
+        else if (isTables) {
+          if (activeSub === 'shipments') renderShipments();
+          else renderGeneric(activeSub);
+        }
       }
 
       // ── Home dashboard: all charts over the full dataset
@@ -497,7 +563,8 @@
       // ── jump to the shipments tab filtered to one client/company/ship
       function setDrill(key, id, name) {
         drill = { key, id: String(id), name };
-        activeTab = 'shipments';
+        activeTab = 'tables';
+        activeSub = 'shipments';
         renderTabs();
         renderActive();
       }
@@ -510,7 +577,8 @@
         document.getElementById('portSearch').value = '';
         document.querySelectorAll('#portList label').forEach(l => { l.style.display = ''; });
         updatePortPickerLabel();
-        activeTab = 'ports';
+        activeTab = 'tables';
+        activeSub = 'ports';
         renderTabs();
         renderActive();
       }
@@ -820,6 +888,219 @@
         });
       }
 
+      // ── Anomalies: flag days whose income is far from the typical day
+      // Robust z-score (median + MAD), so one huge day cannot mask the others.
+      // A day that moves more than 25% from the median is reported even when
+      // the spread keeps its z-score below the strict cutoff.
+      const ANOMALY_Z = 4.5;
+      const ANOMALY_PCT = 25;
+      const ANOMALY_MIN_DAYS = 10;
+
+      // middle value of a numeric list; 0 for an empty list
+      function median(values) {
+        if (!values.length) return 0;
+        const sorted = [...values].sort((a, b) => a - b);
+        const mid = Math.floor(sorted.length / 2);
+        return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+      }
+
+      // daily income outliers plus the facts needed to explain each one
+      function detectIncomeAnomalies(rows) {
+        // group cost and shipment count per day; empty days are not anomalies
+        const byDay = new Map();
+        rows.forEach(r => {
+          if (!r.date) return;
+          const e = byDay.get(r.date) || { total: 0, count: 0, rows: [] };
+          e.total += r.ShipmentTotalCost || 0;
+          e.count += 1;
+          e.rows.push(r);
+          byDay.set(r.date, e);
+        });
+
+        const days = [...byDay.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+        if (days.length < ANOMALY_MIN_DAYS) return { baseline: null, items: [] };
+
+        // baseline: median day and its median absolute deviation
+        const totals = days.map(([, e]) => e.total);
+        const med = median(totals);
+        let spread = median(totals.map(v => Math.abs(v - med)));
+        if (!spread) {
+          // MAD is 0 when most days share a value; mean absolute deviation still sees the outlier
+          spread = totals.reduce((a, v) => a + Math.abs(v - med), 0) / totals.length;
+        }
+        if (!spread) return { baseline: { median: med }, items: [] };
+
+        const typicalCount = median(days.map(([, e]) => e.count));
+        // distinct companies per day tells whether a day was quiet or busy
+        const typicalCompanies = median(days.map(([, e]) => new Set(e.rows.map(r => r.companyName)).size));
+
+        // TimeDIM comparison: the usual shipment count for each weekday
+        const byWeekday = new Map();
+        days.forEach(([, e]) => {
+          const dow = e.rows[0].dayOfWeek;
+          if (!dow) return;
+          if (!byWeekday.has(dow)) byWeekday.set(dow, []);
+          byWeekday.get(dow).push(e.count);
+        });
+        const weekdayMedians = new Map([...byWeekday].map(([dow, counts]) => [dow, median(counts)]));
+
+        const items = [];
+        days.forEach(([key, e]) => {
+          const z = 0.6745 * (e.total - med) / spread;
+          const pct = med ? (e.total - med) / med * 100 : null;
+          // flag on either rule: clear statistical outlier or extreme relative change
+          const isOutlier = Math.abs(z) >= ANOMALY_Z;
+          const isExtreme = pct != null && Math.abs(pct) >= ANOMALY_PCT;
+          if (!isOutlier && !isExtreme) return;
+
+          // who caused it: top company by cost and the largest single shipment
+          const byCompany = new Map();
+          e.rows.forEach(r => byCompany.set(r.companyName, (byCompany.get(r.companyName) || 0) + (r.ShipmentTotalCost || 0)));
+          const [topCompany, topCost] = [...byCompany.entries()].sort((a, b) => b[1] - a[1])[0] || ['—', 0];
+          const topRow = e.rows.find(r => r.companyName === topCompany);
+          const biggest = e.rows.reduce((a, r) => ((r.ShipmentTotalCost || 0) > (a.ShipmentTotalCost || 0) ? r : a), e.rows[0]);
+          const weekday = e.rows[0].dayOfWeek || '';
+          items.push({
+            key, total: e.total, count: e.count, z, typicalCount, typicalCompanies, pct,
+            companies: new Set(e.rows.map(r => r.companyName)).size,
+            weekday, weekdayMedian: weekdayMedians.has(weekday) ? weekdayMedians.get(weekday) : null,
+            topCompany, topCost, topShare: e.total ? topCost / e.total * 100 : 0,
+            topCompanyCountry: topRow ? topRow.companyCountry : '',
+            // dimension-table details for the largest shipment on that day
+            biggestId: biggest ? biggest.ShipmentID : null,
+            biggestCost: biggest ? biggest.ShipmentTotalCost || 0 : 0,
+            biggestClient: biggest ? biggest.clientName : '',
+            biggestClientCompany: biggest ? biggest.clientCompany : '',
+            biggestVessel: biggest ? biggest.vessel : '',
+            biggestRegister: biggest ? biggest.shipCountry : '',
+            biggestFrom: biggest ? biggest.portFrom : '',
+            biggestTo: biggest ? biggest.portTo : ''
+          });
+        });
+
+        // ISO dates sort lexicographically, so the list reads oldest → newest
+        items.sort((a, b) => a.key.localeCompare(b.key));
+        return { baseline: { median: med, typicalCount }, items };
+      }
+
+      // one-sentence "why", comparing the day with the dataset and citing the
+      // dimension tables (company, client, ship, ports, weekday)
+      function anomalyWhy(a) {
+        const above = (a.pct ?? a.z) > 0;
+        const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+        const usualN = Math.round(a.typicalCount);
+        const usualCo = Math.round(a.typicalCompanies);
+        let text = above
+          ? `${plural(a.count, 'shipment', 'shipments')} from ${plural(a.companies, 'company', 'companies')}, above the usual ${usualN} from ${usualCo}`
+          : `only ${plural(a.count, 'shipment', 'shipments')} from ${plural(a.companies, 'company', 'companies')} (usual ${usualN} from ${usualCo})`;
+        if (a.weekday && a.weekdayMedian != null) text += `, against a ${a.weekday} median of ${Math.round(a.weekdayMedian)}`;
+        text += '. ';
+
+        const country = a.topCompanyCountry ? ` (${a.topCompanyCountry})` : '';
+        if (a.topShare >= 20) {
+          text += `The top company was ${a.topCompany}${country} at US$ ${Math.round(a.topCost).toLocaleString()} (${Math.round(a.topShare)}% of the day)`;
+        } else {
+          // a diffuse day: naming a "top" company would overstate its role
+          text += `No single company dominated: the largest, ${a.topCompany}${country}, was only ${Math.round(a.topShare)}% of the day at US$ ${Math.round(a.topCost).toLocaleString()}`;
+        }
+        if (a.biggestId != null) {
+          const client = a.biggestClient + (a.biggestClientCompany ? ` of ${a.biggestClientCompany}` : '');
+          const vessel = a.biggestVessel + (a.biggestRegister ? ` (${a.biggestRegister})` : '');
+          text += `; the largest record was shipment #${a.biggestId} for ${client}, carried by ${vessel} from ${a.biggestFrom} to ${a.biggestTo}.`;
+        } else {
+          text += '.';
+        }
+        return text;
+      }
+
+      // daily income line with the flagged days painted red
+      function drawAnomalyChart(items) {
+        const flagged = new Set(items.map(a => a.key));
+        const keys = bucketKeys('day');
+        const sums = new Map();
+        allRows.forEach(r => {
+          if (!r.date) return;
+          const k = GRAINS.day.key(r.date);
+          sums.set(k, (sums.get(k) || 0) + (r.ShipmentTotalCost || 0));
+        });
+        const c = themeVars();
+        mountChart('anomalyIncome', {
+          type: 'line',
+          data: {
+            labels: keys.map(GRAINS.day.label),
+            datasets: [{
+              label: 'Income (US$)',
+              data: keys.map(k => Math.round(sums.get(k) || 0)),
+              borderColor: c.ok, backgroundColor: alpha(c.ok, .12), fill: true, tension: .3,
+              // red, slightly larger points mark the flagged days
+              pointRadius: keys.map(k => flagged.has(k) ? 5 : 2),
+              pointHitRadius: 10,
+              pointBackgroundColor: keys.map(k => flagged.has(k) ? c.err : c.ok),
+              pointBorderColor: keys.map(k => flagged.has(k) ? c.err : c.ok)
+            }]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            // clicking a flagged point jumps to that day's explanation below
+            onClick: (event, elements) => {
+              if (!elements.length) return;
+              const key = keys[elements[0].index];
+              const target = flagged.has(key) && document.getElementById('anomaly-' + key);
+              if (!target) return;
+              target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              // restart the fade so repeated clicks on the same point still flash
+              target.classList.remove('flash');
+              void target.offsetWidth;
+              target.classList.add('flash');
+            },
+            onHover: (event, elements) => {
+              const hit = elements.length && flagged.has(keys[elements[0].index]);
+              event.native.target.style.cursor = hit ? 'pointer' : 'default';
+            },
+            plugins: {
+              legend: { display: false },
+              tooltip: { callbacks: { label: ctx => `${flagged.has(keys[ctx.dataIndex]) ? '⚠ Anomaly · ' : ''}US$ ${Number(ctx.raw).toLocaleString()}` } }
+            },
+            scales: { y: { beginAtZero: true, ticks: { callback: v => '$' + Number(v).toLocaleString() } } }
+          }
+        });
+      }
+
+      // Anomalies tab: recompute from the full dataset and repaint chart + list
+      function renderAnomalies() {
+        const { baseline, items } = detectIncomeAnomalies(allRows);
+        drawAnomalyChart(items);
+
+        const summary = document.getElementById('anomalySummary');
+        const listEl = document.getElementById('anomalyList');
+        if (!baseline) {
+          summary.textContent = 'Not enough data';
+          listEl.innerHTML = '<div class="empty">At least 10 days of shipments are needed to spot anomalies.</div>';
+          return;
+        }
+        summary.textContent = `${items.length} found · typical day US$ ${Math.round(baseline.median).toLocaleString()} · ≥ ${ANOMALY_Z}σ or ±${ANOMALY_PCT}%`;
+        if (!items.length) {
+          listEl.innerHTML = '<div class="empty">No income anomalies detected at this sensitivity.</div>';
+          return;
+        }
+
+        // cap the list so a noisy dataset cannot render hundreds of entries
+        const shown = items.slice(0, 20);
+        listEl.innerHTML = shown.map(a => {
+          const spike = a.z > 0;
+          const pct = a.pct == null ? '' : `${a.pct > 0 ? '+' : ''}${Math.round(a.pct)}% vs typical`;
+          return `<div class="anomaly-item" id="anomaly-${a.key}">
+            <div class="anomaly-head">
+              <span class="anomaly-badge ${spike ? 'spike' : 'dip'}">${spike ? '▲ Spike' : '▼ Dip'}</span>
+              <strong>${a.key}</strong>
+              <span>US$ ${Math.round(a.total).toLocaleString()}</span>
+              <span class="hint">${pct}</span>
+            </div>
+            <div class="anomaly-why"><strong>What:</strong> income was ${spike ? 'far above' : 'far below'} a typical day. <strong>Why:</strong> ${anomalyWhy(a)}</div>
+          </div>`;
+        }).join('') + (items.length > shown.length ? `<div class="anomaly-more">Showing first ${shown.length} of ${items.length}.</div>` : '');
+      }
+
       // ── chart: shipments by weekday (fixed Mon–Sun order, optional month filter)
       const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
       function drawWeekdayChart(rows, canvasId) {
@@ -1061,7 +1342,8 @@
       // ── theme: navy dark mode, persisted
       function applyTheme() {
         document.documentElement.setAttribute('data-theme', theme);
-        themeBtn.textContent = theme === 'dark' ? '☀️' : '🌙';
+        // label says what clicking will do, not just the current state
+        themeBtn.textContent = theme === 'dark' ? '☀️ Light mode' : '🌙 Dark mode';
         applyChartDefaults();
       }
       applyTheme();
@@ -1076,9 +1358,13 @@
         localStorage.setItem('theme', theme);
         applyTheme();
         renderActive();
+        settingsEl.open = false;   // close the menu so the change is visible
       });
 
-      document.getElementById('refreshBtn').addEventListener('click', loadAll);
+      document.getElementById('refreshBtn').addEventListener('click', () => {
+        settingsEl.open = false;
+        loadAll();
+      });
       searchInput.addEventListener('input', () => { view.shipments.page = 1; renderShipments(); });
       document.getElementById('applyFilter').addEventListener('click', () => { view.shipments.page = 1; renderShipments(); });
       clientFilter.addEventListener('change', () => { view.shipments.page = 1; renderShipments(); });
@@ -1097,22 +1383,29 @@
         drawIncomeChart(allRows, document.getElementById('hIncomeGrain').value, 'hIncome');
       });
 
+      // switching tables inside the Tables tab keeps each table's own search/page state
+      tablePicker.addEventListener('change', () => {
+        activeSub = tablePicker.value;
+        renderActive();
+      });
+
       // ── per-tab table toggles (tables start hidden)
       document.getElementById('shipTableToggle').addEventListener('click', () => {
         view.shipments.showTable = !view.shipments.showTable;
         renderShipments();
       });
       document.getElementById('gTableToggle').addEventListener('click', () => {
-        const v = view[activeTab];
+        const v = view[activeSub];
         if (!v) return;
         v.showTable = !v.showTable;
-        renderGeneric(activeTab);
+        renderGeneric(activeSub);
       });
 
-      // ── home "Explore data" shortcuts
+      // ── home "Explore data" shortcuts: open the Tables tab on that table
       document.querySelectorAll('[data-goto]').forEach(b => {
         b.addEventListener('click', () => {
-          activeTab = b.dataset.goto;
+          activeTab = 'tables';
+          activeSub = b.dataset.goto;
           renderTabs();
           renderActive();
           window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1155,9 +1448,9 @@
       });
 
       document.getElementById('gSearch').addEventListener('input', (e) => {
-        view[activeTab].q = e.target.value;
-        view[activeTab].page = 1;
-        renderGeneric(activeTab);
+        view[activeSub].q = e.target.value;
+        view[activeSub].page = 1;
+        renderGeneric(activeSub);
       });
 
       loadAll();

@@ -115,6 +115,20 @@
   .anomaly-why{font-size:.82rem; color:var(--muted); margin-top:.25rem}
   .anomaly-why strong{color:var(--accent)}
   .anomaly-more{font-size:.8rem; color:var(--muted); margin-top:.5rem}
+  /* Questions tab: fixed-height result lists with their own end/top control */
+  .scroll-table{max-height:320px; overflow:auto}
+  .q-text{font-size:.9rem; margin:.25rem 0 .75rem}
+  .q-scroll-btn{font-size:.78rem; padding:.3rem .6rem}
+  .stack .charts{margin-top:0}
+  /* Question summary: compact two-column recap at the bottom of the question */
+  .summary-table{width:auto; max-width:min(560px,100%); border:1px solid var(--border); border-radius:6px; margin-top:.25rem}
+  .summary-table tr{background:transparent}
+  .summary-table th,.summary-table td{padding:.5rem .75rem; border-bottom:1px solid var(--border)}
+  .summary-table thead th{position:static; text-align:center; text-transform:none; letter-spacing:0; font-size:.85rem; font-weight:700; color:var(--accent)}
+  .summary-table tbody th{position:static; width:130px; text-transform:none; letter-spacing:0; font-size:.82rem; color:var(--muted)}
+  .summary-table tbody td{font-weight:600}
+  .summary-table tbody tr:last-child th,.summary-table tbody tr:last-child td{border-bottom:none; font-weight:700}
+  .summary-note{font-size:.9rem; margin-top:.75rem; max-width:640px}
   .hidden{display:none}
   .empty{padding:2rem; text-align:center; color:var(--muted)}
   /* ── phone layout ── */
@@ -363,6 +377,74 @@
     </div>
   </section>
 
+  <!-- ── Questions panel: one .question-card per midterm question ── -->
+  <section id="panel-questions" class="hidden">
+    <div class="stack">
+      <div class="chart-card">
+        <div class="chart-head"><h3>Questions</h3></div>
+        <p class="hint">Midterm requirement questions given</p>
+      </div>
+
+      <div class="chart-card question-card" id="question-1">
+        <div class="chart-head">
+          <h3>1 · August 2026</h3>
+          <span class="hint" id="q1Meta">—</span>
+        </div>
+        <p class="q-text">On August of 2026, who attended the shipments and what is the total shipment costs?</p>
+
+        <div class="chart-head">
+          <h3>Ships / vessels</h3>
+          <button type="button" class="page-btn q-scroll-btn" data-scroll="q1ShipsBox">End ↓</button>
+        </div>
+        <div class="table-wrap scroll-table" id="q1ShipsBox">
+          <table id="q1Ships">
+            <thead><tr><th>Ship ID</th><th>Vessel</th><th>Shipment cost (US$)</th></tr></thead>
+            <tbody></tbody>
+            <tfoot id="q1ShipsTotal"></tfoot>
+          </table>
+        </div>
+      </div>
+
+      <div class="charts">
+        <div class="chart-card">
+          <div class="chart-head">
+            <h3>Companies</h3>
+            <span class="chart-controls">
+              <span class="hint" id="q1CompaniesMeta">—</span>
+              <button type="button" class="page-btn q-scroll-btn" data-scroll="q1CompaniesBox">End ↓</button>
+            </span>
+          </div>
+          <div class="table-wrap scroll-table" id="q1CompaniesBox">
+            <table id="q1Companies">
+              <thead><tr><th>CompanyID</th><th>Company Name</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-head">
+            <h3>Clients</h3>
+            <span class="chart-controls">
+              <span class="hint" id="q1ClientsMeta">—</span>
+              <button type="button" class="page-btn q-scroll-btn" data-scroll="q1ClientsBox">End ↓</button>
+            </span>
+          </div>
+          <div class="table-wrap scroll-table" id="q1ClientsBox">
+            <table id="q1Clients">
+              <thead><tr><th>ClientID</th><th>Client Name</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-head"><h3>Summary</h3></div>
+        <div id="q1Summary"></div>
+      </div>
+    </div>
+  </section>
+
   <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
   <script>
@@ -425,6 +507,7 @@
       const panelShipments = document.getElementById('panel-shipments');
       const panelGeneric = document.getElementById('panel-generic');
       const panelAnomalies = document.getElementById('panel-anomalies');
+      const panelQuestions = document.getElementById('panel-questions');
       const settingsEl = document.getElementById('settings');
       const lastUpdated = document.getElementById('lastUpdated');
       const clientFilter = document.getElementById('clientFilter');
@@ -494,13 +577,14 @@
         }
       }
 
-      // ── top tab bar: three sections; the six tables live inside Tables
+      // ── top tab bar: four sections; the six tables live inside Tables
       function renderTabs() {
         tabsEl.innerHTML = '';
         const top = [
           { id: 'home', label: 'Home' },
           { id: 'tables', label: 'Tables' },
-          { id: 'anomalies', label: 'Anomalies' }
+          { id: 'anomalies', label: 'Anomalies' },
+          { id: 'questions', label: 'Questions' }
         ];
         top.forEach(t => {
           const b = document.createElement('button');
@@ -523,13 +607,16 @@
         const isHome = activeTab === 'home';
         const isTables = activeTab === 'tables';
         const isAnomalies = activeTab === 'anomalies';
+        const isQuestions = activeTab === 'questions';
         panelHome.classList.toggle('hidden', !isHome);
         // only the picker's current table is visible; shipments has its own panel
         panelShipments.classList.toggle('hidden', !(isTables && activeSub === 'shipments'));
         panelGeneric.classList.toggle('hidden', !(isTables && activeSub !== 'shipments'));
         panelAnomalies.classList.toggle('hidden', !isAnomalies);
+        panelQuestions.classList.toggle('hidden', !isQuestions);
         if (isHome) renderHome();
         else if (isAnomalies) renderAnomalies();
+        else if (isQuestions) renderQuestions();
         else if (isTables) {
           if (activeSub === 'shipments') renderShipments();
           else renderGeneric(activeSub);
@@ -1101,6 +1188,94 @@
         }).join('') + (items.length > shown.length ? `<div class="anomaly-more">Showing first ${shown.length} of ${items.length}.</div>` : '');
       }
 
+      // ── Questions tab: August 2026 aggregates for the midterm question set
+      const QUESTION_MONTH = '2026-08';   // month hard-coded in the assignment SQL
+
+      function renderQuestions() {
+        const rows = allRows.filter(r => (r.date || '').slice(0, 7) === QUESTION_MONTH);
+
+        // ships: merge by vessel name so repeated ships become one row with combined income
+        const ships = new Map();
+        rows.forEach(r => {
+          const name = String(r.vessel || 'N/A').trim();
+          const key = name.toLowerCase();
+          const e = ships.get(key) || { ids: new Set(), name, cost: 0 };
+          e.ids.add(r.ShipID);
+          e.cost += r.ShipmentTotalCost || 0;
+          ships.set(key, e);
+        });
+        const shipRows = [...ships.values()].sort((a, b) => b.cost - a.cost);
+        const total = rows.reduce((a, r) => a + (r.ShipmentTotalCost || 0), 0);
+
+        document.getElementById('q1Meta').textContent =
+          `${rows.length.toLocaleString()} shipments · US$ ${Math.round(total).toLocaleString()}`;
+        document.querySelector('#q1Ships tbody').innerHTML = shipRows.length
+          ? shipRows.map(s => `<tr>
+              <td>${[...s.ids].filter(id => id != null).join(', ') || 'N/A'}</td>
+              <td>${s.name}</td>
+              <td>${Math.round(s.cost).toLocaleString()}</td>
+            </tr>`).join('')
+          : '<tr><td colspan="3" class="empty">No shipments in August 2026.</td></tr>';
+        document.getElementById('q1ShipsTotal').innerHTML = shipRows.length
+          ? `<tr class="total-row"><td>GRAND TOTAL >></td><td></td><td>${Math.round(total).toLocaleString()}</td></tr>`
+          : '';
+
+        // companies / clients: distinct dimension rows, ordered by ID like the SQL
+        const companies = new Map();
+        rows.forEach(r => companies.set(r.CompanyID, r.companyName));
+        const companyRows = [...companies.entries()].sort((a, b) => (Number(a[0]) || 0) - (Number(b[0]) || 0));
+        document.getElementById('q1CompaniesMeta').textContent = `${companyRows.length.toLocaleString()} companies`;
+        document.querySelector('#q1Companies tbody').innerHTML = companyRows.length
+          ? companyRows.map(([id, name]) => `<tr><td>${id ?? '—'}</td><td>${name}</td></tr>`).join('')
+          : '<tr><td colspan="2" class="empty">No companies.</td></tr>';
+
+        const clients = new Map();
+        rows.forEach(r => clients.set(r.ClientID, r.clientName));
+        const clientRows = [...clients.entries()].sort((a, b) => (Number(a[0]) || 0) - (Number(b[0]) || 0));
+        document.getElementById('q1ClientsMeta').textContent = `${clientRows.length.toLocaleString()} clients`;
+        document.querySelector('#q1Clients tbody').innerHTML = clientRows.length
+          ? clientRows.map(([id, name]) => `<tr><td>${id ?? '—'}</td><td>${name}</td></tr>`).join('')
+          : '<tr><td colspan="2" class="empty">No clients.</td></tr>';
+
+        const totalFmt = total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const n = v => v.toLocaleString();
+        document.getElementById('q1Summary').innerHTML = `
+          <table class="summary-table">
+            <thead><tr><th colspan="2">August 2026 Shipments</th></tr></thead>
+            <tbody>
+              <tr><th>Ships</th><td>${n(shipRows.length)} Ships</td></tr>
+              <tr><th>Companies</th><td>${n(companyRows.length)} Companies Involved</td></tr>
+              <tr><th>Clients</th><td>${n(clientRows.length)} Clients</td></tr>
+              <tr><th>Total Cost</th><td>$${totalFmt}</td></tr>
+            </tbody>
+          </table>
+          <p class="summary-note">A total of ${n(shipRows.length)} Ships, ${n(companyRows.length)} Companies, and ${n(clientRows.length)} Clients are involved in the shipment records for the month of August, 2026. The total shipping costs is amounted at $${totalFmt}.</p>`;
+
+        syncScrollButtons();
+      }
+
+      // ── result lists: one button per table that flips between its end and top
+      function syncScrollButtons() {
+        document.querySelectorAll('[data-scroll]').forEach(btn => {
+          const box = document.getElementById(btn.dataset.scroll);
+          if (!box) return;
+          btn.classList.toggle('hidden', box.scrollHeight <= box.clientHeight + 4);
+          const atEnd = box.scrollTop + box.clientHeight >= box.scrollHeight - 4;
+          btn.textContent = atEnd ? 'Top ↑' : 'End ↓';
+        });
+      }
+      function initScrollButtons() {
+        document.querySelectorAll('[data-scroll]').forEach(btn => {
+          const box = document.getElementById(btn.dataset.scroll);
+          if (!box) return;
+          btn.addEventListener('click', () => {
+            const atEnd = box.scrollTop + box.clientHeight >= box.scrollHeight - 4;
+            box.scrollTo({ top: atEnd ? 0 : box.scrollHeight, behavior: 'smooth' });
+          });
+          box.addEventListener('scroll', syncScrollButtons, { passive: true });
+        });
+      }
+
       // ── chart: shipments by weekday (fixed Mon–Sun order, optional month filter)
       const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
       function drawWeekdayChart(rows, canvasId) {
@@ -1453,6 +1628,7 @@
         renderGeneric(activeSub);
       });
 
+      initScrollButtons();
       loadAll();
     });
   </script>

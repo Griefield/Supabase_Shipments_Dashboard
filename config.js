@@ -3,3 +3,8 @@
 // This key is public-by-design; it only grants read access per RLS policies.
 window.SUPABASE_URL = 'https://qagckjwgwavcimdiwkwz.supabase.co';
 window.SUPABASE_ANON_KEY = 'sb_publishable_tPZKzW69UZW82-9CAVvDrg_KA_2c95s';
+
+// Ask tab (LLM chat): deployed Cloudflare Worker that proxies Gemini.
+// Empty string = the Ask tab explains that the backend is not configured yet.
+// @see chat-backend/README.md
+window.CHAT_ENDPOINT = 'https://shipments-chat.griefield.workers.dev';

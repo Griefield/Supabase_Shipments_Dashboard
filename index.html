@@ -123,6 +123,18 @@
   .q-toolbar{display:flex; align-items:center; justify-content:space-between; gap:.75rem; flex-wrap:wrap; margin-bottom:.75rem; background:var(--card); border:1px solid var(--border); border-radius:8px; padding:.55rem .9rem}
   #qLegacyBtn[aria-pressed="true"]{background:var(--btn-bg); color:var(--btn-fg); border-color:var(--btn-bg)}
   .stack .charts{margin-top:0}
+  /* Ask tab: chat transcript, input row, suggestion chips */
+  .ask-log{display:flex; flex-direction:column; gap:.6rem; max-height:55vh; overflow:auto; padding:.25rem 0; margin-bottom:.75rem}
+  .ask-msg{max-width:85%; padding:.55rem .8rem; border-radius:8px; font-size:.9rem; white-space:pre-wrap; line-height:1.45}
+  .ask-msg.user{align-self:flex-end; background:var(--btn-bg); color:var(--btn-fg)}
+  .ask-msg.bot{align-self:flex-start; background:var(--th-bg); border:1px solid var(--border)}
+  .ask-msg.error{align-self:flex-start; border:1px solid var(--err); color:var(--err)}
+  .ask-form{display:flex; gap:.5rem}
+  .ask-form .input{flex:1}
+  .ask-suggest{display:flex; flex-wrap:wrap; gap:.4rem; margin-top:.6rem}
+  .ask-suggest:empty{display:none}
+  .ask-chip{font-size:.8rem; padding:.3rem .6rem; border:1px solid var(--border); border-radius:999px; background:var(--pagebtn-bg); color:var(--accent); cursor:pointer}
+  .ask-chip:hover{background:var(--hover)}
   /* Question summary: compact two-column recap at the bottom of the question */
   .summary-table{width:auto; max-width:min(560px,100%); border:1px solid var(--border); border-radius:6px; margin-top:.25rem}
   .summary-table tr{background:transparent}
@@ -498,6 +510,25 @@
     </div>
   </section>
 
+  <!-- ── Ask panel: LLM chat grounded in the rows already loaded above ── -->
+  <section id="panel-ask" class="hidden">
+    <div class="chart-card">
+      <div class="chart-head">
+        <h3>Ask the shipment data</h3>
+        <span class="hint">Answers use the data loaded in this dashboard</span>
+      </div>
+      <div class="ask-log" id="askLog" aria-live="polite"></div>
+      <form class="ask-form" id="askForm">
+        <input class="input" id="askInput" type="text" autocomplete="off"
+               placeholder="e.g. Which company shipped the most in September 2026?"
+               aria-label="Ask a question about the shipments" />
+        <button class="btn" type="submit" id="askSend">Send</button>
+      </form>
+      <div class="ask-suggest" id="askSuggest"></div>
+    </div>
+  </section>
+
+  <script src="config.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
   <script>
@@ -550,6 +581,9 @@
       let liveQuestionsHtml = null;                                // live panel markup parked while the snapshot is shown
       let legacyLoad = null;                                       // in-flight legacy.js loader
       const boundScrollButtons = new WeakSet();                    // scroll buttons already wired (survives innerHTML swaps)
+      const askMessages = [{ role: 'bot', text: 'Hi — ask me about the shipments, or type "what can you do?"' }];
+      const askHistory = [];                                       // turns sent to the model, oldest first
+      let askBusy = false;                                         // one request at a time
 
       // one chart per canvas: destroy the old instance before mounting a new one
       function mountChart(canvasId, config) {
@@ -574,6 +608,12 @@
       const qModeBtn = document.getElementById('qLegacyBtn');
       const qModeNote = document.getElementById('qModeNote');
       const qToolbar = document.getElementById('qToolbar');
+      const panelAsk = document.getElementById('panel-ask');
+      const askLog = document.getElementById('askLog');
+      const askForm = document.getElementById('askForm');
+      const askInput = document.getElementById('askInput');
+      const askSend = document.getElementById('askSend');
+      const askSuggest = document.getElementById('askSuggest');
 
       // ── theme + shared chart colors
       function themeVars() {
@@ -644,7 +684,8 @@
           { id: 'home', label: 'Home' },
           { id: 'tables', label: 'Tables' },
           { id: 'anomalies', label: 'Anomalies' },
-          { id: 'questions', label: 'Questions' }
+          { id: 'questions', label: 'Questions' },
+          { id: 'ask', label: 'Ask' }
         ];
         top.forEach(t => {
           const b = document.createElement('button');
@@ -668,6 +709,7 @@
         const isTables = activeTab === 'tables';
         const isAnomalies = activeTab === 'anomalies';
         const isQuestions = activeTab === 'questions';
+        const isAsk = activeTab === 'ask';
         panelHome.classList.toggle('hidden', !isHome);
         // only the picker's current table is visible; shipments has its own panel
         panelShipments.classList.toggle('hidden', !(isTables && activeSub === 'shipments'));
@@ -675,8 +717,10 @@
         panelAnomalies.classList.toggle('hidden', !isAnomalies);
         panelQuestions.classList.toggle('hidden', !isQuestions);
         qToolbar.classList.toggle('hidden', !isQuestions);
+        panelAsk.classList.toggle('hidden', !isAsk);
         if (isHome) renderHome();
         else if (isAnomalies) renderAnomalies();
+        else if (isAsk) renderAsk();
         else if (isQuestions) renderQuestions();
         else if (isTables) {
           if (activeSub === 'shipments') renderShipments();
@@ -766,9 +810,10 @@
 
       // ── month picker for the weekday chart (empty set = all months)
       const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      function monthLabel(k) {
+      const MONTH_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+      function monthLabel(k, full) {
         const [y, m] = k.split('-');
-        return `${MONTH_NAMES[Number(m) - 1]} ${y}`;
+        return `${(full ? MONTH_LONG : MONTH_NAMES)[Number(m) - 1]} ${y}`;
       }
       function populateMonths() {
         const keys = [...new Set(allRows.map(r => (r.date || '').slice(0, 7)).filter(Boolean))].sort();
@@ -1251,10 +1296,15 @@
 
       // ── Questions tab: one aggregation per assignment question
       const QUESTION_MONTH = '2026-08';   // month hard-coded in the assignment SQL
+      const QUESTION_MONTH_Q4 = '2026-09'; // Q4 is about September departures
 
       function renderQuestions() {
         if (qLegacy) return;   // the frozen snapshot owns the panel while it is shown
         const rows = allRows.filter(r => (r.date || '').slice(0, 7) === QUESTION_MONTH);
+
+        // month labels come from the constants so the live view never shows a stale month
+        document.querySelector('#question-1 h3').textContent = `1 · ${monthLabel(QUESTION_MONTH, true)}`;
+        document.querySelector('#question-4 h3').textContent = `4 · Port departures · ${monthLabel(QUESTION_MONTH_Q4, true)}`;
 
         // ships: merge by vessel name so repeated ships become one row with combined income
         const ships = new Map();
@@ -1277,7 +1327,7 @@
               <td>${s.name}</td>
               <td>${Math.round(s.cost).toLocaleString()}</td>
             </tr>`).join('')
-          : '<tr><td colspan="3" class="empty">No shipments in August 2026.</td></tr>';
+          : `<tr><td colspan="3" class="empty">No shipments in ${monthLabel(QUESTION_MONTH, true)}.</td></tr>`;
         document.getElementById('q1ShipsTotal').innerHTML = shipRows.length
           ? `<tr class="total-row"><td>GRAND TOTAL >></td><td></td><td>${Math.round(total).toLocaleString()}</td></tr>`
           : '';
@@ -1303,7 +1353,7 @@
         const n = v => v.toLocaleString();
         document.getElementById('q1Summary').innerHTML = `
           <table class="summary-table">
-            <thead><tr><th colspan="2">August 2026 Shipments</th></tr></thead>
+            <thead><tr><th colspan="2">${monthLabel(QUESTION_MONTH, true)} Shipments</th></tr></thead>
             <tbody>
               <tr><th>Ships</th><td>${n(shipRows.length)} Ships</td></tr>
               <tr><th>Companies</th><td>${n(companyRows.length)} Companies Involved</td></tr>
@@ -1311,7 +1361,7 @@
               <tr><th>Total Cost</th><td>$${totalFmt}</td></tr>
             </tbody>
           </table>
-          <p class="summary-note">A total of ${n(shipRows.length)} Ships, ${n(companyRows.length)} Companies, and ${n(clientRows.length)} Clients are involved in the shipment records for the month of August, 2026. The total shipping costs is amounted at $${totalFmt}.</p>`;
+          <p class="summary-note">A total of ${n(shipRows.length)} Ships, ${n(companyRows.length)} Companies, and ${n(clientRows.length)} Clients are involved in the shipment records for the month of ${monthLabel(QUESTION_MONTH, true)}. The total shipping costs is amounted at $${totalFmt}.</p>`;
 
         // Q2: load + distance totals for one company (name fixed by the SQL)
         const fmt2 = v => Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -1322,6 +1372,9 @@
         document.querySelector('#q2Table tbody').innerHTML = apex.length
           ? `<tr><td>${apex[0].companyName}</td><td>${fmt2(load)}</td><td>${fmt2(dist)}</td></tr>`
           : '<tr><td colspan="3" class="empty">No shipments for Apex Lines 10.</td></tr>';
+        document.querySelector('#question-2 .summary-note').textContent = apex.length
+          ? `${apex[0].companyName} accumulated a total of ${fmt2(load)} Tonnes of shipment load and a travel distance of ${fmt2(dist)} Nautical Miles.`
+          : 'No shipment records were found for Apex Lines 10.';
 
         // Q3: distinct companies that shipped for one client, with the CEO from CompanyDIM
         const alice = allRows.filter(r => (r.clientName || '').toLowerCase() === 'alice miller');
@@ -1336,12 +1389,17 @@
         document.querySelector('#q3Table tbody').innerHTML = aliceCompanies.length
           ? aliceCompanies.map(c => `<tr><td>${c.id}</td><td>${c.name}</td><td>${c.ceo}</td></tr>`).join('')
           : '<tr><td colspan="3" class="empty">No companies for Alice Miller.</td></tr>';
+        document.querySelector('#question-3 .summary-note').textContent = !aliceCompanies.length
+          ? 'No shipment records were found for Alice Miller.'
+          : aliceCompanies.length === 1
+            ? `The company that has collaborated with the client Alice Miller is ${aliceCompanies[0].name} with ${alice.length} shipment record${alice.length === 1 ? '' : 's'}.`
+            : `The companies that have collaborated with the client Alice Miller are ${aliceCompanies.map(c => c.name).join(', ')}.`;
 
         // Q4: September departures from the Singapore / Pier 9 ports, distinct like the SQL
         const seenSept = new Set();
         const septRows = allRows
           .filter(r => {
-            if ((r.date || '').slice(0, 7) !== '2026-09') return false;
+            if ((r.date || '').slice(0, 7) !== QUESTION_MONTH_Q4) return false;
             const port = (r.portFrom || '').toLowerCase();
             if (!port.includes('singapore') && !port.includes('pier 9')) return false;
             const k = `${r.portFrom}|${r.ShipID}|${r.vessel}|${r.ClientID}|${r.date}`;
@@ -1360,7 +1418,12 @@
               <td>${r.clientName}</td>
               <td>${r.date}</td>
             </tr>`).join('')
-          : '<tr><td colspan="6" class="empty">No departures in September 2026.</td></tr>';
+          : `<tr><td colspan="6" class="empty">No departures in ${monthLabel(QUESTION_MONTH_Q4, true)}.</td></tr>`;
+        document.querySelector('#question-4 .summary-note').textContent = !septRows.length
+          ? `No departures were recorded from Port Singapore Pier 9 in ${monthLabel(QUESTION_MONTH_Q4, true)}.`
+          : `For ${monthLabel(QUESTION_MONTH_Q4, true)}, Port Singapore Pier 9 had ${septRows.length} departure${septRows.length === 1 ? '' : 's'}: ` +
+            septRows.slice(0, 5).map(r => `${r.clientName} on ${r.date} on the vessel ${r.vessel}`).join('; ') +
+            (septRows.length > 5 ? `; and ${septRows.length - 5} more` : '') + '.';
 
         syncScrollButtons();
       }
@@ -1452,6 +1515,215 @@
         renderQuestions();   // repaint from the data currently in memory
         initScrollButtons();
         syncScrollButtons();
+      }
+
+      // ── Ask tab: one question at a time, answered by Gemini through the
+      // Cloudflare Worker. Only a compact data packet leaves the browser.
+      const ASK_MAX_CONTEXT = 12000;   // under the Worker's 20000-char limit, with headroom
+      const ASK_CHIPS = [
+        'How many shipments are there in total?',
+        'Which company has the highest total cost?',
+        'Who are the companies for Alice Miller?',
+        'What departed from Port Singapore Pier 9 in September 2026?'
+      ];
+      const ASK_METRIC_WORDS = /\b(shipments?|costs?|load|tonnes?|distance|ports?|compan(y|ies)|clients?|vessels?|ships?|months?|total|average|avg|highest|top|most|least|revenue|income|departures?)\b/;
+
+      const fmtNum = v => Math.round(Number(v) || 0).toLocaleString('en-US');
+
+      // group rows by a string key, keeping count/cost/load so one line can describe each group
+      function groupTotals(rows, keyFn) {
+        const m = new Map();
+        rows.forEach(r => {
+          const k = keyFn(r);
+          if (!k) return;
+          const e = m.get(k) || { key: k, count: 0, cost: 0, load: 0 };
+          e.count += 1;
+          e.cost += r.ShipmentTotalCost || 0;
+          e.load += r.ShipmentLoad_Tonnes || 0;
+          m.set(k, e);
+        });
+        return [...m.values()];
+      }
+
+      const byCost = rows => groupTotals(rows, r => r.companyName).sort((a, b) => b.cost - a.cost);
+      const topBy = (rows, keyFn, limit, unit) => groupTotals(rows, keyFn)
+        .sort((a, b) => b.count - a.count)
+        .slice(0, limit)
+        .map(e => `${e.key} (${e.count} ${unit}, US$ ${fmtNum(e.cost)})`)
+        .join(' ; ');
+
+      // facts about one matched entity: totals, date range, companies, vessels, routes
+      function summarizeRows(rows) {
+        const dates = rows.map(r => r.date).filter(Boolean).sort();
+        const cost = rows.reduce((a, r) => a + (r.ShipmentTotalCost || 0), 0);
+        const load = rows.reduce((a, r) => a + (r.ShipmentLoad_Tonnes || 0), 0);
+        const parts = [
+          `${fmtNum(rows.length)} shipment${rows.length === 1 ? '' : 's'}`,
+          `cost US$ ${fmtNum(cost)}`,
+          `load ${fmtNum(load)} t`
+        ];
+        if (dates.length) parts.push(`dates ${dates[0]}..${dates[dates.length - 1]}`);
+        const list = (keyFn, label, limit) => {
+          const e = groupTotals(rows, keyFn).sort((a, b) => b.count - a.count).slice(0, limit);
+          if (e.length) parts.push(`${label}: ${e.map(x => `${x.key} (${x.count})`).join(', ')}`);
+        };
+        list(r => r.companyName, 'companies', 4);
+        list(r => r.vessel, 'vessels', 4);
+        list(r => r.portFrom && r.portTo ? `${r.portFrom} -> ${r.portTo}` : '', 'routes', 4);
+        return parts.join(' | ');
+      }
+
+      // name match: whole name inside the question, or every word of the name present
+      function nameMatches(name, q, qTokens) {
+        const n = String(name || '').toLowerCase().trim();
+        if (!n) return false;
+        if (q.includes(n)) return true;
+        const toks = n.split(/[^a-z0-9]+/).filter(t => t.length >= 3);
+        return toks.length > 0 && toks.every(t => qTokens.has(t));
+      }
+
+      // clients/companies/ships/ports named in the question, capped so the packet stays small
+      function entityMatches(q, qTokens) {
+        const dims = [
+          { label: 'client',  rows: data.clients,   id: 'ClientID',  nameKey: 'Client_Name', hit: (r, id) => String(r.ClientID) === id },
+          { label: 'company', rows: data.companies, id: 'CompanyID', nameKey: 'Company_Name', hit: (r, id) => String(r.CompanyID) === id },
+          { label: 'ship',    rows: data.ships,     id: 'ShipID',    nameKey: 'Vessel_Name', hit: (r, id) => String(r.ShipID) === id },
+          { label: 'port',    rows: data.ports,     id: 'PortID',    nameKey: 'Port_Name', hit: (r, id) => String(r.PortDeparture) === id || String(r.PortArrival) === id }
+        ];
+        const out = [];
+        dims.forEach(d => {
+          (d.rows || [])
+            .filter(row => nameMatches(row[d.nameKey], q, qTokens))
+            .slice(0, 2)
+            .forEach(row => {
+              const rows = allRows.filter(r => d.hit(r, String(row[d.id])));
+              if (rows.length) out.push(`MATCH ${d.label} "${row[d.nameKey]}": ${summarizeRows(rows)}`);
+            });
+        });
+        return out.slice(0, 6);
+      }
+
+      // The packet is the model's only source of truth. Sections are appended in
+      // priority order and the tail is dropped once the cap is reached.
+      function buildContext(question) {
+        const q = String(question || '').toLowerCase();
+        const qTokens = new Set(q.split(/[^a-z0-9]+/).filter(t => t.length >= 3));
+        const dates = allRows.map(r => r.date).filter(Boolean).sort();
+        const totals = allRows.reduce((a, r) => {
+          a.cost += r.ShipmentTotalCost || 0;
+          a.load += r.ShipmentLoad_Tonnes || 0;
+          a.dist += r.DistanceTravelled_Nautical_Miles || 0;
+          return a;
+        }, { cost: 0, load: 0, dist: 0 });
+
+        const header = `DATASET: ${fmtNum(allRows.length)} shipments` +
+          (dates.length ? `, ${dates[0]} to ${dates[dates.length - 1]}` : '');
+        const totalLine = `TOTALS: load ${fmtNum(totals.load)} tonnes | cost US$ ${fmtNum(totals.cost)}` +
+          (allRows.length ? ` | avg distance ${fmtNum(totals.dist / allRows.length)} nautical miles` : '');
+
+        const matches = entityMatches(q, qTokens);
+        const mentionsMonth = MONTH_LONG.some(m => q.includes(m.toLowerCase())) ||
+          MONTH_NAMES.some(m => q.includes(m.toLowerCase()));
+
+        // Small talk ("hi", "thanks") gets only the totals: cheap and no dump.
+        const hasDataSignal = /\d/.test(q) || ASK_METRIC_WORDS.test(q) || mentionsMonth || matches.length > 0;
+        if (!hasDataSignal) return `${header}\n${totalLine}`;
+
+        const sections = [
+          header,
+          totalLine,
+          ...matches,
+          'BY MONTH: ' + groupTotals(allRows, r => (r.date || '').slice(0, 7))
+            .sort((a, b) => a.key.localeCompare(b.key))
+            .map(e => `${monthLabel(e.key, true)}: ${e.count} shipments, US$ ${fmtNum(e.cost)}`).join(' ; '),
+          'TOP COMPANIES BY COST: ' + byCost(allRows).slice(0, 10)
+            .map(e => `${e.key} (${e.count} shipments, US$ ${fmtNum(e.cost)})`).join(' ; '),
+          'TOP CLIENTS BY SHIPMENTS: ' + topBy(allRows, r => r.clientName, 10, 'shipments'),
+          'TOP SHIPS BY SHIPMENTS: ' + topBy(allRows, r => r.vessel, 10, 'shipments'),
+          'TOP DEPARTURE PORTS: ' + topBy(allRows, r => r.portFrom, 10, 'departures'),
+          'COMPANY COUNTRIES: ' + groupTotals(allRows, r => r.companyCountry)
+            .sort((a, b) => b.count - a.count).slice(0, 10)
+            .map(e => `${e.key} (${e.count})`).join(' ; '),
+          'BY WEEKDAY: ' + groupTotals(allRows, r => r.dayOfWeek)
+            .sort((a, b) => b.count - a.count)
+            .map(e => `${e.key} (${e.count})`).join(' ; ')
+        ];
+
+        let out = '';
+        for (const s of sections) {
+          if (!s) continue;
+          if (out.length + s.length + 1 > ASK_MAX_CONTEXT) break;
+          out += (out ? '\n' : '') + s;
+        }
+        console.assert(out.length <= ASK_MAX_CONTEXT, 'ask context over cap', out.length);
+        return out;
+      }
+
+      function renderAsk() {
+        askLog.innerHTML = '';
+        askMessages.forEach(m => {
+          const d = document.createElement('div');
+          d.className = `ask-msg ${m.role === 'user' ? 'user' : m.role === 'error' ? 'error' : 'bot'}`;
+          d.textContent = m.text;   // textContent: model output is never parsed as HTML
+          askLog.appendChild(d);
+        });
+        askLog.scrollTop = askLog.scrollHeight;
+      }
+
+      function setAskBusy(busy) {
+        askInput.disabled = busy;
+        askSend.disabled = busy;
+        askSend.textContent = busy ? 'Thinking…' : 'Send';
+      }
+
+      async function ask(rawQuestion) {
+        const question = String(rawQuestion || '').trim();
+        if (!question || askBusy) return;
+        const endpoint = String(window.CHAT_ENDPOINT || '').trim();
+        if (!endpoint) {
+          askMessages.push({ role: 'error', text: 'The assistant backend is not configured yet. Deploy chat-backend/ and set CHAT_ENDPOINT in config.js.' });
+          renderAsk();
+          return;
+        }
+
+        askBusy = true;
+        askMessages.push({ role: 'user', text: question });
+        askMessages.push({ role: 'bot', text: 'Thinking…' });
+        setAskBusy(true);
+        renderAsk();
+
+        try {
+          const context = buildContext(question);
+          const ctrl = new AbortController();
+          const timer = setTimeout(() => ctrl.abort(), 30000);
+          const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ question, context, history: askHistory.slice(-6) }),
+            signal: ctrl.signal
+          });
+          clearTimeout(timer);
+          const payload = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(payload.error || `request failed (${res.status})`);
+          const answer = String(payload.answer || '').trim();
+          if (!answer) throw new Error('the assistant returned no text');
+
+          askMessages[askMessages.length - 1] = { role: 'bot', text: answer };
+          askHistory.push({ role: 'user', text: question }, { role: 'model', text: answer });
+          if (askHistory.length > 20) askHistory.splice(0, askHistory.length - 20);
+        } catch (err) {
+          console.error('Ask error:', err);
+          askMessages[askMessages.length - 1] = {
+            role: 'error',
+            text: err && err.name === 'AbortError'
+              ? 'The assistant took too long to answer. Try again.'
+              : `Sorry — ${err && err.message ? err.message : 'the request failed'}`
+          };
+        } finally {
+          askBusy = false;
+          setAskBusy(false);
+          renderAsk();
+        }
       }
 
       // ── chart: shipments by weekday (fixed Mon–Sun order, optional month filter)
@@ -1809,6 +2081,23 @@
       // ── Questions: toggle between live results and the frozen pre-import snapshot
       qModeBtn.addEventListener('click', () => { if (qLegacy) showLive(); else showLegacy(); });
       syncQMode();
+
+      // ── Ask: one-shot suggestion chips + the question form
+      ASK_CHIPS.forEach(text => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'ask-chip';
+        b.textContent = text;
+        b.addEventListener('click', () => { askInput.value = text; askForm.requestSubmit(); });
+        askSuggest.appendChild(b);
+      });
+      askForm.addEventListener('submit', e => {
+        e.preventDefault();
+        const q = askInput.value;
+        askInput.value = '';
+        ask(q);
+      });
+      renderAsk();
 
       initScrollButtons();
       loadAll();

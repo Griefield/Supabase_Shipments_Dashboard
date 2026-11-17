@@ -1,0 +1,14 @@
+{
+  "name": "chat-backend",
+  "version": "1.0.0",
+  "description": "Cloudflare Worker that forwards one question at a time to Gemini. The Gemini key is a Worker secret — it is never in this repo or in `index.html`.",
+  "main": "worker.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "type": "commonjs",
+  "devDependencies": {
+    "wrangler": "^4.163.0"
+  }
+}

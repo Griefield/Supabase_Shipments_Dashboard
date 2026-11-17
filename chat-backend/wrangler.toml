@@ -1,0 +1,12 @@
+# Cloudflare Worker config for the Ask tab's Gemini proxy.
+# The API key is a secret (see README), never a var.
+name = "shipments-chat"
+main = "worker.js"
+compatibility_date = "2026-11-01"
+
+[vars]
+# Comma-separated origins allowed to call the Worker.
+# Add your custom domain here if you ever stop using GitHub Pages.
+ALLOWED_ORIGIN = "https://griefield.github.io,http://localhost:4173,http://127.0.0.1:4173"
+# Optional: models change over time, so the model name is a var.
+GEMINI_MODEL = "gemini-3.5-flash"

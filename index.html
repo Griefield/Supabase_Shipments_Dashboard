@@ -119,6 +119,9 @@
   .scroll-table{max-height:320px; overflow:auto}
   .q-text{font-size:.9rem; margin:.25rem 0 .75rem}
   .q-scroll-btn{font-size:.78rem; padding:.3rem .6rem}
+  /* Questions mode bar: sits outside the panel because the frozen snapshot replaces the panel's markup */
+  .q-toolbar{display:flex; align-items:center; justify-content:space-between; gap:.75rem; flex-wrap:wrap; margin-bottom:.75rem; background:var(--card); border:1px solid var(--border); border-radius:8px; padding:.55rem .9rem}
+  #qLegacyBtn[aria-pressed="true"]{background:var(--btn-bg); color:var(--btn-fg); border-color:var(--btn-bg)}
   .stack .charts{margin-top:0}
   /* Question summary: compact two-column recap at the bottom of the question */
   .summary-table{width:auto; max-width:min(560px,100%); border:1px solid var(--border); border-radius:6px; margin-top:.25rem}
@@ -378,6 +381,11 @@
   </section>
 
   <!-- ── Questions panel: one .question-card per midterm question ── -->
+  <!-- mode bar is a sibling: the frozen snapshot replaces #panel-questions.innerHTML -->
+  <div class="q-toolbar hidden" id="qToolbar">
+    <span class="hint" id="qModeNote">Live data</span>
+    <button type="button" class="page-btn" id="qLegacyBtn" aria-pressed="false">Legacy answers</button>
+  </div>
   <section id="panel-questions" class="hidden">
     <div class="stack">
       <div class="chart-card">
@@ -538,6 +546,10 @@
       let drill = null;                                            // active drill-down {key,id,name}
       let theme = localStorage.getItem('theme') === 'dark' ? 'dark' : 'light';
       const charts = new Map();                                    // canvas id -> Chart instance
+      let qLegacy = false;                                         // Questions tab: show the frozen snapshot instead of live results
+      let liveQuestionsHtml = null;                                // live panel markup parked while the snapshot is shown
+      let legacyLoad = null;                                       // in-flight legacy.js loader
+      const boundScrollButtons = new WeakSet();                    // scroll buttons already wired (survives innerHTML swaps)
 
       // one chart per canvas: destroy the old instance before mounting a new one
       function mountChart(canvasId, config) {
@@ -559,6 +571,9 @@
       const searchInput = document.getElementById('searchInput');
       const themeBtn = document.getElementById('themeBtn');
       const drillChip = document.getElementById('drillChip');
+      const qModeBtn = document.getElementById('qLegacyBtn');
+      const qModeNote = document.getElementById('qModeNote');
+      const qToolbar = document.getElementById('qToolbar');
 
       // ── theme + shared chart colors
       function themeVars() {
@@ -659,6 +674,7 @@
         panelGeneric.classList.toggle('hidden', !(isTables && activeSub !== 'shipments'));
         panelAnomalies.classList.toggle('hidden', !isAnomalies);
         panelQuestions.classList.toggle('hidden', !isQuestions);
+        qToolbar.classList.toggle('hidden', !isQuestions);
         if (isHome) renderHome();
         else if (isAnomalies) renderAnomalies();
         else if (isQuestions) renderQuestions();
@@ -1237,6 +1253,7 @@
       const QUESTION_MONTH = '2026-08';   // month hard-coded in the assignment SQL
 
       function renderQuestions() {
+        if (qLegacy) return;   // the frozen snapshot owns the panel while it is shown
         const rows = allRows.filter(r => (r.date || '').slice(0, 7) === QUESTION_MONTH);
 
         // ships: merge by vessel name so repeated ships become one row with combined income
@@ -1360,14 +1377,81 @@
       }
       function initScrollButtons() {
         document.querySelectorAll('[data-scroll]').forEach(btn => {
+          // legacy/live swaps replace the nodes, so track bindings on the elements themselves
+          if (boundScrollButtons.has(btn)) return;
           const box = document.getElementById(btn.dataset.scroll);
           if (!box) return;
+          boundScrollButtons.add(btn);
           btn.addEventListener('click', () => {
             const atEnd = box.scrollTop + box.clientHeight >= box.scrollHeight - 4;
             box.scrollTo({ top: atEnd ? 0 : box.scrollHeight, behavior: 'smooth' });
           });
           box.addEventListener('scroll', syncScrollButtons, { passive: true });
         });
+      }
+
+      // ── Questions: live results vs the frozen pre-import snapshot (legacy.js)
+      // The snapshot is generated code, loaded only on the first click, so the
+      // normal page load never downloads its ~123 KB.
+      function ensureLegacy() {
+        if (window.LEGACY_QUESTIONS_HTML) return Promise.resolve(window.LEGACY_QUESTIONS_HTML);
+        if (legacyLoad) return legacyLoad;
+        legacyLoad = new Promise((resolve, reject) => {
+          const s = document.createElement('script');
+          s.src = 'legacy.js';
+          s.onload = () => {
+            legacyLoad = null;
+            if (window.LEGACY_QUESTIONS_HTML) resolve(window.LEGACY_QUESTIONS_HTML);
+            else reject(new Error('legacy.js loaded without a snapshot'));
+          };
+          s.onerror = () => { legacyLoad = null; reject(new Error('legacy.js could not be loaded')); };
+          document.head.appendChild(s);
+        });
+        return legacyLoad;
+      }
+
+      // button label + "frozen on" date; also flips aria-pressed for the active style
+      function syncQMode() {
+        qModeBtn.textContent = qLegacy ? 'Back to live' : 'Legacy answers';
+        qModeBtn.setAttribute('aria-pressed', String(qLegacy));
+        const taken = window.LEGACY_QUESTIONS_TAKEN;
+        const when = taken
+          ? new Date(taken).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+          : '';
+        qModeNote.textContent = qLegacy
+          ? `⏳ Frozen snapshot${when ? ' · ' + when : ''}`
+          : 'Live data';
+      }
+
+      async function showLegacy() {
+        qLegacy = true;
+        syncQMode();
+        qModeBtn.disabled = true;
+        try {
+          const html = await ensureLegacy();
+          if (!qLegacy) return;   // toggled back while loading
+          if (liveQuestionsHtml == null) liveQuestionsHtml = panelQuestions.innerHTML;
+          panelQuestions.innerHTML = html;
+          initScrollButtons();
+          syncScrollButtons();
+          syncQMode();   // now that LEGACY_QUESTIONS_TAKEN is known, show the frozen date
+        } catch (err) {
+          console.error('Legacy snapshot error:', err);
+          qLegacy = false;
+          syncQMode();
+          qModeNote.textContent = 'Snapshot unavailable';
+        } finally {
+          qModeBtn.disabled = false;
+        }
+      }
+
+      function showLive() {
+        qLegacy = false;
+        if (liveQuestionsHtml != null) { panelQuestions.innerHTML = liveQuestionsHtml; liveQuestionsHtml = null; }
+        syncQMode();
+        renderQuestions();   // repaint from the data currently in memory
+        initScrollButtons();
+        syncScrollButtons();
       }
 
       // ── chart: shipments by weekday (fixed Mon–Sun order, optional month filter)
@@ -1721,6 +1805,10 @@
         view[activeSub].page = 1;
         renderGeneric(activeSub);
       });
+
+      // ── Questions: toggle between live results and the frozen pre-import snapshot
+      qModeBtn.addEventListener('click', () => { if (qLegacy) showLive(); else showLegacy(); });
+      syncQMode();
 
       initScrollButtons();
       loadAll();

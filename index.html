@@ -1563,6 +1563,9 @@
           `load ${fmtNum(load)} t`
         ];
         if (dates.length) parts.push(`dates ${dates[0]}..${dates[dates.length - 1]}`);
+        // per-month counts let the model answer "in September" without guessing
+        const months = groupTotals(rows, r => (r.date || '').slice(0, 7)).sort((a, b) => a.key.localeCompare(b.key));
+        if (months.length > 1) parts.push(`by month: ${months.map(e => `${monthLabel(e.key, true)} (${e.count})`).join(', ')}`);
         const list = (keyFn, label, limit) => {
           const e = groupTotals(rows, keyFn).sort((a, b) => b.count - a.count).slice(0, limit);
           if (e.length) parts.push(`${label}: ${e.map(x => `${x.key} (${x.count})`).join(', ')}`);
@@ -1570,6 +1573,13 @@
         list(r => r.companyName, 'companies', 4);
         list(r => r.vessel, 'vessels', 4);
         list(r => r.portFrom && r.portTo ? `${r.portFrom} -> ${r.portTo}` : '', 'routes', 4);
+        // small result sets are spelled out row by row, so dates/vessels/people are never inferred
+        if (rows.length <= 20) {
+          parts.push('shipments: ' + rows.slice()
+            .sort((a, b) => String(a.date).localeCompare(String(b.date)))
+            .map(r => `${r.date} ${r.clientName} / ${r.vessel} / ${r.portFrom} -> ${r.portTo} / US$ ${fmtNum(r.ShipmentTotalCost)}`)
+            .join(' ; '));
+        }
         return parts.join(' | ');
       }
 

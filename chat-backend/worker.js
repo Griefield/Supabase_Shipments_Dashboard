@@ -88,7 +88,7 @@ export default {
           body: JSON.stringify({
             system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
             contents: turns,
-            generationConfig: { temperature: 0.2, maxOutputTokens: 800 }
+            generationConfig: { temperature: 0.2, maxOutputTokens: 2048 }
           })
         }
       );
@@ -104,11 +104,15 @@ export default {
     }
 
     const data = await upstream.json().catch(() => null);
-    const answer = (data?.candidates?.[0]?.content?.parts || [])
+    const candidate = data?.candidates?.[0];
+    const answer = (candidate?.content?.parts || [])
       .map(p => p.text || '').join('').trim();
 
     if (!answer) return json({ error: 'No answer was generated for that question.' }, 502, cors);
-    return json({ answer }, 200, cors);
+    // Thinking models spend part of the token budget before the visible answer,
+    // so a long list can still be cut off; tell the user instead of ending mid-sentence.
+    const cutOff = candidate?.finishReason === 'MAX_TOKENS';
+    return json({ answer: cutOff ? `${answer}\n\n(Answer cut off — ask a narrower question.)` : answer }, 200, cors);
   }
 };
 

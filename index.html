@@ -547,12 +547,12 @@
 
       // ── tab definitions: one per table
       const TABS = [
-        { id: 'shipments', label: 'Shipments', table: 'Shipments' },
-        { id: 'clients',   label: 'Clients',   table: 'ClientDIM',  cols: ['ClientID','Client_Name','Client_Company','Client_Address'] },
-        { id: 'companies', label: 'Companies', table: 'CompanyDIM', cols: ['CompanyID','Company_Name','Home_Country','Company_CEO'] },
-        { id: 'ports',     label: 'Ports',     table: 'PortDIM',    cols: ['PortID','Port_Name','Port_Address','Port_Contact'] },
-        { id: 'ships',     label: 'Ships',     table: 'ShipsDIM',   cols: ['ShipID','Vessel_Name','Ship_Country_Register','Ship_IMO_No.','Vessel_Load_Capacity_tonnes'] },
-        { id: 'time',      label: 'Time',      table: 'TimeDIM',    cols: ['TimeID','Date','Day_of_Week','Departure','Arrival'] }
+        { id: 'shipments', label: 'Shipments', table: 'Shipments', pk: 'ShipmentID' },
+        { id: 'clients',   label: 'Clients',   table: 'ClientDIM',  pk: 'ClientID',  cols: ['ClientID','Client_Name','Client_Company','Client_Address'] },
+        { id: 'companies', label: 'Companies', table: 'CompanyDIM', pk: 'CompanyID', cols: ['CompanyID','Company_Name','Home_Country','Company_CEO'] },
+        { id: 'ports',     label: 'Ports',     table: 'PortDIM',    pk: 'PortID',    cols: ['PortID','Port_Name','Port_Address','Port_Contact'] },
+        { id: 'ships',     label: 'Ships',     table: 'ShipsDIM',   pk: 'ShipID',    cols: ['ShipID','Vessel_Name','Ship_Country_Register','Ship_IMO_No.','Vessel_Load_Capacity_tonnes'] },
+        { id: 'time',      label: 'Time',      table: 'TimeDIM',    pk: 'TimeID',    cols: ['TimeID','Date','Day_of_Week','Departure','Arrival'] }
       ];
 
       // friendly column headers
@@ -646,22 +646,41 @@
       };
 
       // ── fetch every row of a table, paginating past the 1000-row cap
-      async function fetchAll(table) {
-        let out = [];
-        for (let from = 0; ; from += FETCH_PAGE) {
-          const { data: rows, error } = await supa
-            .from(table).select('*').range(from, from + FETCH_PAGE - 1);
+      // ordered by pk: without a stable order Postgres may repeat or skip rows between pages
+      async function fetchAll(table, pk) {
+        const page = (n, counted) => supa.from(table)
+          .select('*', counted ? { count: 'exact' } : undefined)
+          .order(pk)
+          .range(n * FETCH_PAGE, n * FETCH_PAGE + FETCH_PAGE - 1);
+        const take = async (n, counted) => {
+          const { data, error, count } = await page(n, counted);
           if (error) throw error;
-          if (!rows || rows.length === 0) break;
-          out = out.concat(rows);
-          if (rows.length < FETCH_PAGE) break;
+          return { rows: data || [], count };
+        };
+
+        const first = await take(0, true);
+        if (first.rows.length < FETCH_PAGE) return first.rows;
+        const out = [...first.rows];
+
+        // no count header: walk the rest one page at a time so nothing is dropped
+        if (first.count == null) {
+          for (let n = 1; ; n++) {
+            const { rows } = await take(n, false);
+            out.push(...rows);
+            if (rows.length < FETCH_PAGE) return out;
+          }
         }
+        // shortcut: every remaining page fires at once; chunk this if a table passes ~50k rows
+        const total = Math.ceil(first.count / FETCH_PAGE);
+        const rest = await Promise.all(Array.from({ length: total - 1 }, (_, i) => take(i + 1, false)));
+        rest.forEach(r => out.push(...r.rows));
+        console.assert(out.length === first.count, 'fetchAll row count mismatch', table, out.length, first.count);
         return out;
       }
 
       async function loadAll() {
         try {
-          const results = await Promise.all(TABS.map(t => fetchAll(t.table)));
+          const results = await Promise.all(TABS.map(t => fetchAll(t.table, t.pk)));
           TABS.forEach((t, i) => { data[t.id] = results[i]; });
           allRows = joinedShipments();
           lastUpdated.textContent = new Date().toLocaleTimeString();

@@ -3,6 +3,18 @@
 Cloudflare Worker that forwards one question at a time to Gemini.
 The Gemini key is a Worker secret — it is never in this repo or in `index.html`.
 
+Three request shapes (all `POST /`):
+
+| Body | What happens |
+| --- | --- |
+| `{question, context, history}` | One Gemini call answers from the packet, **or** returns `{mode:'query', spec}` for the browser to run (row-level questions) |
+| `{mode:'phrase', question, result, history}` | Turns the browser's query result into prose; used only after a query |
+| `{question, context, history, forcePacket:true}` | Skips the spec path (fallback when a spec cannot be executed) |
+
+Query specs are validated here (field/operator/aggregate allowlists) and again in the browser.
+Rate limit: 40 requests per IP per hour (a query question costs 2). Free-tier Gemini keys allow
+about 20 generation requests per day per model, so heavy testing exhausts a day's quota.
+
 ## Deploy
 
 ```powershell

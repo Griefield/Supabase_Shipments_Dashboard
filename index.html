@@ -1588,7 +1588,8 @@
         const n = String(name || '').toLowerCase().trim();
         if (!n) return false;
         if (q.includes(n)) return true;
-        const toks = n.split(/[^a-z0-9]+/).filter(t => t.length >= 3);
+        // digit words stay: "Gate 5" must not collapse into "Gate 3"
+        const toks = n.split(/[^a-z0-9]+/).filter(t => t.length >= 3 || /^\d+$/.test(t));
         return toks.length > 0 && toks.every(t => qTokens.has(t));
       }
 
@@ -1617,7 +1618,7 @@
       // priority order and the tail is dropped once the cap is reached.
       function buildContext(question) {
         const q = String(question || '').toLowerCase();
-        const qTokens = new Set(q.split(/[^a-z0-9]+/).filter(t => t.length >= 3));
+        const qTokens = new Set(q.split(/[^a-z0-9]+/).filter(t => t.length >= 3 || /^\d+$/.test(t)));
         const dates = allRows.map(r => r.date).filter(Boolean).sort();
         const totals = allRows.reduce((a, r) => {
           a.cost += r.ShipmentTotalCost || 0;
@@ -1669,6 +1670,197 @@
         return out;
       }
 
+      // ── Query-spec mode: the model writes a JSON query, the rows stay here.
+      // The Worker validates the spec too; this side re-checks field names so a
+      // malformed spec can never throw inside the render loop.
+      const ASK_FIELDS = {
+        date: r => r.date || '',
+        month: r => (r.date || '').slice(0, 7),
+        dayOfWeek: r => r.dayOfWeek || '',
+        clientName: r => r.clientName || '',
+        companyName: r => r.companyName || '',
+        vessel: r => r.vessel || '',
+        portFrom: r => r.portFrom || '',
+        portTo: r => r.portTo || '',
+        port: r => [r.portFrom, r.portTo].filter(Boolean),
+        companyCountry: r => r.companyCountry || '',
+        shipCountry: r => r.shipCountry || '',
+        portFromCountry: r => r.portFromCountry || '',
+        portToCountry: r => r.portToCountry || '',
+        cost: r => Number(r.ShipmentTotalCost) || 0,
+        loadTonnes: r => Number(r.ShipmentLoad_Tonnes) || 0,
+        distanceNm: r => Number(r.DistanceTravelled_Nautical_Miles) || 0
+      };
+      const ASK_TEXT_FIELDS = new Set(['date', 'month', 'dayOfWeek', 'clientName', 'companyName',
+        'vessel', 'portFrom', 'portTo', 'port', 'companyCountry', 'shipCountry',
+        'portFromCountry', 'portToCountry']);
+      const ASK_SPEC_OPS = ['eq', 'in', 'contains', 'gt', 'gte', 'lt', 'lte', 'between'];
+
+      const askNorm = v => String(v == null ? '' : v).toLowerCase().trim();
+      // words keep digits so "Gate 5" and "Gate 3" never collapse (same rule as nameMatches)
+      const askWords = s => askNorm(s).split(/[^a-z0-9]+/).filter(t => t.length >= 3 || /^\d+$/.test(t));
+
+      // true when the words are equal or one edit apart; only for >= 5-char words, so
+      // "gate" must match exactly and a typo cannot drag in a different port
+      function withinOneEdit(a, b) {
+        if (a === b) return true;
+        if (a.length < 5 || b.length < 5) return false;
+        if (Math.abs(a.length - b.length) > 1) return false;
+        let i = 0, j = 0, edits = 0;
+        while (i < a.length && j < b.length) {
+          if (a[i] === b[j]) { i++; j++; continue; }
+          if (++edits > 1) return false;
+          if (a.length > b.length) i++;
+          else if (b.length > a.length) j++;
+          else { i++; j++; }
+        }
+        return edits + (a.length - i) + (b.length - j) <= 1;
+      }
+
+      // distinct values of a field, built once per question and reused by every filter
+      const askValueCache = new Map();
+      function askFieldValues(field) {
+        if (askValueCache.has(field)) return askValueCache.get(field);
+        const get = ASK_FIELDS[field];
+        if (!get) return [];
+        const seen = new Set();
+        allRows.forEach(r => {
+          const v = get(r);
+          (Array.isArray(v) ? v : [v]).forEach(x => { const s = String(x || '').trim(); if (s) seen.add(s); });
+        });
+        const list = [...seen];
+        askValueCache.set(field, list);
+        return list;
+      }
+
+      // exact -> case-insensitive -> one-word-difference; when several names are close it
+      // picks the first but reports the others, so the answer can mention the ambiguity
+      function resolveName(field, raw) {
+        const values = askFieldValues(field);
+        const target = askNorm(raw);
+        const exact = values.find(v => askNorm(v) === target);
+        if (exact) return { value: exact };
+
+        const words = askWords(raw);
+        if (!words.length) return { value: raw, missing: true };
+        const candidates = values.filter(v => {
+          const ws = askWords(v);
+          if (ws.length !== words.length) return false;
+          let diff = 0;
+          for (let i = 0; i < ws.length; i++) {
+            // digits must be identical: "Gate 5" is never "Gate 2", whatever else differs
+            if (/^\d+$/.test(ws[i]) || /^\d+$/.test(words[i])) {
+              if (ws[i] !== words[i]) return false;
+            } else if (!withinOneEdit(ws[i], words[i]) && (++diff > 1)) {
+              return false;
+            }
+          }
+          return true;
+        });
+        if (candidates.length === 1) return { value: candidates[0] };
+        if (candidates.length > 1) return { value: candidates[0], alternatives: candidates.slice(1, 3) };
+        return { value: raw, missing: true };
+      }
+
+      function matchOp(cell, op, val) {
+        const cells = (Array.isArray(cell) ? cell : [cell]).map(askNorm);
+        switch (op) {
+          case 'eq': return cells.includes(askNorm(val));
+          case 'in': return (val || []).some(v => cells.includes(askNorm(v)));
+          case 'contains': return cells.some(c => c.includes(askNorm(val)));
+          case 'gt': return Number(cell) > Number(val);
+          case 'gte': return Number(cell) >= Number(val);
+          case 'lt': return Number(cell) < Number(val);
+          case 'lte': return Number(cell) <= Number(val);
+          case 'between': return Number(cell) >= Number(val[0]) && Number(cell) <= Number(val[1]);
+          default: return false;
+        }
+      }
+
+      // Runs a validated spec over allRows and returns the compact text the phrasing call
+      // sees. Throws 'fallback' when the question cannot be answered this way.
+      // shortcut: covers filters/grouping only; "why" questions and columns that do not exist
+      // still fall back to the packet, upgrade path = add fields to ASK_FIELDS + the Worker allowlist.
+      function runSpec(spec) {
+        if (!spec || typeof spec !== 'object') throw new Error('fallback');
+        const notes = [];
+        const tests = [];
+
+        Object.entries(spec.where || {}).forEach(([field, cond]) => {
+          const get = ASK_FIELDS[field];
+          if (!get || !cond) throw new Error('fallback');
+          const op = Object.keys(cond)[0];
+          if (!ASK_SPEC_OPS.includes(op)) throw new Error('fallback');
+          let val = cond[op];
+
+          if (ASK_TEXT_FIELDS.has(field) && (op === 'eq' || op === 'in' || op === 'contains')) {
+            const list = op === 'in' ? val : [val];
+            if (!Array.isArray(list) || !list.length) throw new Error('fallback');
+            const resolved = list.map(raw => {
+              const hit = resolveName(field, raw);
+              if (hit.missing) throw new Error('fallback');
+              if (hit.alternatives) notes.push(`${field} "${raw}" also matched ${hit.alternatives.join(', ')}; used "${hit.value}"`);
+              else if (hit.value !== raw) notes.push(`${field} "${raw}" -> "${hit.value}"`);
+              return hit.value;
+            });
+            val = op === 'in' ? resolved : resolved[0];
+          }
+          tests.push({ field, op, val });
+        });
+
+        const rows = allRows.filter(r => tests.every(t => matchOp(ASK_FIELDS[t.field](r), t.op, t.val)));
+        if (!rows.length) throw new Error('fallback');
+
+        const where = Object.entries(spec.where || {})
+          .map(([f, c]) => `${f} ${Object.keys(c)[0]} ${JSON.stringify(c[Object.keys(c)[0]])}`).join(', ');
+        const header = [
+          `${rows.length} of ${allRows.length} shipments matched`,
+          where ? `filters: ${where}` : '',
+          notes.length ? `resolved: ${notes.join(' | ')}` : ''
+        ].filter(Boolean).join('\n');
+
+        if (spec.groupBy) {
+          const get = ASK_FIELDS[spec.groupBy];
+          if (!get) throw new Error('fallback');
+          const groups = new Map();
+          rows.forEach(r => {
+            const key = String(get(r) || '').trim();
+            if (!key) return;
+            const e = groups.get(key) || { key, count: 0, sumCost: 0, sumLoad: 0, avgDistance: 0 };
+            e.count += 1;
+            e.sumCost += Number(r.ShipmentTotalCost) || 0;
+            e.sumLoad += Number(r.ShipmentLoad_Tonnes) || 0;
+            e.avgDistance += Number(r.DistanceTravelled_Nautical_Miles) || 0;
+            groups.set(key, e);
+          });
+          const agg = spec.aggregate || { count: true };
+          const sortField = (spec.sort && spec.sort.field) || 'count';
+          const dir = (spec.sort && spec.sort.dir) === 'asc' ? 1 : -1;
+          const limit = Math.min(spec.limit || 15, 50);
+          const list = [...groups.values()]
+            .sort((a, b) => dir * ((sortField === 'key' ? a.key.localeCompare(b.key) : (a[sortField] || 0) - (b[sortField] || 0))))
+            .slice(0, limit)
+            .map(e => {
+              const parts = [e.key, `shipments ${e.count}`];
+              if (agg.sumCost) parts.push(`cost US$ ${fmtNum(e.sumCost)}`);
+              if (agg.sumLoad) parts.push(`load ${fmtNum(e.sumLoad)} t`);
+              if (agg.avgDistance) parts.push(`avg distance ${fmtNum(e.avgDistance / e.count)} nm`);
+              return parts.join(' | ');
+            });
+          return {
+            result: `${header}\ngrouped by ${spec.groupBy} (${groups.size} groups, showing ${list.length})\n${list.join('\n')}`
+          };
+        }
+
+        const limit = Math.min(spec.limit || 20, 50);
+        const list = rows
+          .slice()
+          .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')))
+          .slice(0, limit)
+          .map(r => [r.date, r.clientName, r.vessel, r.companyName, `${r.portFrom} -> ${r.portTo}`, `US$ ${fmtNum(r.ShipmentTotalCost)}`].join(' | '));
+        return { result: `${header}\nshowing ${list.length} of ${rows.length} rows\n${list.join('\n')}` };
+      }
+
       function renderAsk() {
         askLog.innerHTML = '';
         askMessages.forEach(m => {
@@ -1703,18 +1895,39 @@
         renderAsk();
 
         try {
-          const context = buildContext(question);
           const ctrl = new AbortController();
-          const timer = setTimeout(() => ctrl.abort(), 30000);
-          const res = await fetch(endpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ question, context, history: askHistory.slice(-6) }),
-            signal: ctrl.signal
-          });
+          const timer = setTimeout(() => ctrl.abort(), 45000);
+          const post = async payload => {
+            const res = await fetch(endpoint, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload),
+              signal: ctrl.signal
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || `request failed (${res.status})`);
+            return data;
+          };
+
+          const context = buildContext(question);
+          const history = askHistory.slice(-6);
+          askValueCache.clear();   // rows do not change mid-question; rebuild lazily
+
+          let payload = await post({ question, context, history });
+          if (payload.mode === 'query') {
+            // the Worker only decided *what* to look up; the rows never left the browser
+            let ran = null;
+            try { ran = runSpec(payload.spec); } catch (err) { ran = null; }
+            if (ran) {
+              if (window.ASK_DEBUG) console.debug('[ask] spec', payload.spec, '\n', ran.result);
+              payload = await post({ mode: 'phrase', question, result: ran.result, history });
+            } else {
+              // unresolved name or zero rows: answer from the packet instead
+              payload = await post({ question, context, history, forcePacket: true });
+            }
+          }
           clearTimeout(timer);
-          const payload = await res.json().catch(() => ({}));
-          if (!res.ok) throw new Error(payload.error || `request failed (${res.status})`);
+
           const answer = String(payload.answer || '').trim();
           if (!answer) throw new Error('the assistant returned no text');
 

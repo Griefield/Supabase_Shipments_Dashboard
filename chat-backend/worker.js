@@ -49,7 +49,7 @@ Reply with JSON only, no prose, no code fences, in one of two shapes:
    If DATA does not cover a data question and no query would help, say what is missing.
 
 2) {"mode":"query","spec":{...}} when the answer needs specific rows or a grouping the DATA
-   block does not contain. The browser runs the spec over 1,300 shipment rows and a second
+   block does not contain. The browser runs the spec over the loaded shipment rows and a second
    call phrases the result, so only request a query when it genuinely adds detail.
 
 Spec fields: date (YYYY-MM-DD), month (YYYY-MM), dayOfWeek, clientName, companyName, vessel,

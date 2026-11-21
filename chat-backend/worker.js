@@ -48,9 +48,12 @@ Reply with JSON only, no prose, no code fences, in one of two shapes:
    unless a list was asked. Greetings: reply naturally and briefly, then offer examples.
    If DATA does not cover a data question and no query would help, say what is missing.
 
-2) {"mode":"query","spec":{...}} when the answer needs specific rows or a grouping the DATA
-   block does not contain. The browser runs the spec over the loaded shipment rows and a second
-   call phrases the result, so only request a query when it genuinely adds detail.
+2) {"mode":"query","spec":{...}} when the answer needs specific rows, a grouping, or a
+   computed total the DATA block does not contain. Superlatives and computed totals (most,
+   least, highest, lowest, total, average, how many) MUST use a query when a field/aggregate
+   can compute them - do not say DATA is missing before trying. The browser runs the spec
+   over the loaded shipment rows and a second call phrases the result, so only request a
+   query when it genuinely adds detail.
 
 Spec fields: date (YYYY-MM-DD), month (YYYY-MM), dayOfWeek, clientName, companyName, vessel,
 portFrom, portTo, port (either end), companyCountry, shipCountry, portFromCountry,
@@ -60,15 +63,21 @@ Shape: {"where":{field:{"eq":"value"}},"groupBy":"companyName","aggregate":{"cou
 "sumCost":true},"sort":{"field":"sumCost","dir":"desc"},"limit":10}
 Rules: at most 6 where fields, ANDed, one operator each; use portFrom for departures,
 portTo for arrivals, port for either; copy names exactly as the user wrote them (the browser
-fixes typos); omit groupBy/aggregate for row listings; limit <= 50 (default 20);
-never invent fields, numbers, or filter values.
+fixes typos); omit groupBy/aggregate for row listings; aggregate without groupBy returns one
+total; limit <= 50 (default 20); never invent fields, numbers, or filter values.
+For "total ships that departed/arrived at a port in a month", filter portFrom or portTo +
+month, then groupBy vessel (distinct ships) or omit groupBy with aggregate count.
 
 Example: "which ships left Brani Terminal Gate 5 in August 2026?"
-{"mode":"query","spec":{"where":{"month":{"eq":"2026-08"},"portFrom":{"eq":"Brani Terminal Gate 5"}},"limit":20}}`;
+{"mode":"query","spec":{"where":{"month":{"eq":"2026-08"},"portFrom":{"eq":"Brani Terminal Gate 5"}},"limit":20}}
+
+Example: "who is the client with the most money spent?"
+{"mode":"query","spec":{"groupBy":"clientName","aggregate":{"count":true,"sumCost":true},"sort":{"field":"sumCost","dir":"desc"},"limit":10}}`;
 
 // Second call: only sees the executed result, so it cannot wander off.
 const PHRASE_PROMPT = `You are the assistant for a sea-freight shipments dashboard.
 Answer ONLY from the DATA RESULT block, quoting numbers exactly as given.
+- If the result starts with TOTAL, lead with that total, then add at most one useful comparison.
 - 3 sentences max unless the user asked for a list.
 - If the result is empty or does not cover the question, say what is missing instead of guessing.
 - If a "resolved" line shows the question's spelling was corrected, mention the corrected name briefly.`;
@@ -287,7 +296,6 @@ function validateSpec(spec) {
     const aggs = Object.keys(spec.aggregate).filter(k => spec.aggregate[k]);
     if (!aggs.length) return 'empty aggregate';
     if (aggs.some(k => !SPEC_AGGREGATES.includes(k))) return 'unknown aggregate';
-    if (!spec.groupBy) return 'aggregate without groupBy';
   }
   if (spec.sort != null) {
     if (typeof spec.sort !== 'object' || typeof spec.sort.field !== 'string') return 'bad sort';

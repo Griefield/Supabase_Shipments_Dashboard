@@ -76,6 +76,15 @@
   .drill{display:flex; align-items:center; gap:.5rem; background:var(--card); border:1px solid var(--border); border-left:3px solid var(--chart); border-radius:6px; padding:.5rem .75rem; margin-bottom:1rem; font-size:.85rem}
   .drill button{background:none; border:none; cursor:pointer; color:var(--muted); font-size:1rem; line-height:1; padding:0 .15rem}
   .drill button:hover{color:var(--err)}
+  /* active shipment filters, shown as removable tags */
+  .tags{display:flex; flex-wrap:wrap; align-items:center; gap:.4rem; margin-bottom:1rem}
+  .tag{display:inline-flex; align-items:center; gap:.35rem; background:var(--card); border:1px solid var(--border); border-left:3px solid var(--chart); border-radius:999px; padding:.25rem .55rem; font-size:.8rem}
+  .tag button{background:none; border:none; cursor:pointer; color:var(--muted); font-size:.8rem; line-height:1; padding:0 .1rem}
+  .tag button:hover{color:var(--err)}
+  .tag-prefix{font-size:.8rem; color:var(--muted)}
+  .filter-result{display:block; width:100%; text-align:left; background:none; border:none; border-radius:4px; padding:.3rem .35rem; font-family:inherit; font-size:.8rem; color:var(--accent); cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .filter-result:hover{background:var(--hover)}
+  .filter-result span{color:var(--muted); font-size:.72rem; margin-right:.35rem}
   .route{font-variant-numeric:tabular-nums}
   /* Pagination */
   .pagination{padding:.5rem 1rem; background:var(--card); display:flex; gap:.35rem; justify-content:center; align-items:center; flex-wrap:wrap; border:1px solid var(--border); border-top:none; border-radius:0 0 8px 8px; position:sticky; bottom:0; z-index:2}
@@ -214,9 +223,9 @@
         <div class="chart-head">
           <h3>Shipments over Time</h3>
           <select class="select select-sm" id="ovGrain" title="Group shipments by">
-            <option value="month">Monthly</option>
+            <option value="month" selected>Monthly</option>
             <option value="week">Weekly</option>
-            <option value="day" selected>Daily</option>
+            <option value="day" >Daily</option>
           </select>
         </div>
         <div class="chart-box"><canvas id="hVolume"></canvas></div>
@@ -249,9 +258,9 @@
         <div class="chart-head">
           <h3>Port Traffic (Top 5)</h3>
           <select class="select select-sm" id="hPortGrain" title="Group traffic by">
-            <option value="week" selected>Weekly</option>
+            <option value="week" >Weekly</option>
             <option value="day">Daily</option>
-            <option value="month">Monthly</option>
+            <option value="month" selected>Monthly</option>
           </select>
         </div>
         <div class="chart-box"><canvas id="hPorts"></canvas></div>
@@ -260,9 +269,9 @@
         <div class="chart-head">
           <h3>Income from Costs</h3>
           <select class="select select-sm" id="hIncomeGrain" title="Group income by">
-            <option value="month">Monthly</option>
+            <option value="month" selected>Monthly</option>
             <option value="week">Weekly</option>
-            <option value="day" selected>Daily</option>
+            <option value="day" >Daily</option>
           </select>
         </div>
         <div class="chart-box"><canvas id="hIncome"></canvas></div>
@@ -287,12 +296,18 @@
   <section id="panel-shipments" class="hidden">
     <div class="bar">
       <input class="input" type="text" id="searchInput" placeholder="Search… (ID, date, client, company, vessel, port)" />
-      <select class="select" id="clientFilter"><option value="">All clients</option></select>
+      <details class="port-picker" id="filterPicker">
+        <summary id="filterPickerBtn">Filters ▾</summary>
+        <div class="port-panel">
+          <input class="input" type="text" id="filterSearch" placeholder="Search client, company, vessel, port…" />
+          <div class="port-list" id="filterResults"></div>
+        </div>
+      </details>
       <button class="btn" id="applyFilter">Apply</button>
       <button class="btn" id="shipTableToggle">Show table</button>
     </div>
 
-    <div class="drill hidden" id="drillChip"></div>
+    <div class="tags hidden" id="filterTags"></div>
 
     <div class="table-card hidden" id="shipTableCard">
       <div class="table-wrap">
@@ -316,9 +331,9 @@
         <div class="chart-head">
           <h3>Shipments over Time</h3>
           <select class="select select-sm" id="volumeGrain" title="Group shipments by">
-            <option value="month">Monthly</option>
+            <option value="month" selected>Monthly</option>
             <option value="week">Weekly</option>
-            <option value="day" selected>Daily</option>
+            <option value="day" >Daily</option>
           </select>
         </div>
         <div class="chart-box"><canvas id="chartMonth"></canvas></div>
@@ -327,9 +342,9 @@
         <div class="chart-head">
           <h3>Income from Costs</h3>
           <select class="select select-sm" id="incomeGrain" title="Group income by">
-            <option value="month">Monthly</option>
+            <option value="month" selected>Monthly</option>
             <option value="week">Weekly</option>
-            <option value="day" selected>Daily</option>
+            <option value="day" >Daily</option>
           </select>
         </div>
         <div class="chart-box"><canvas id="chartIncome"></canvas></div>
@@ -396,7 +411,7 @@
   <!-- mode bar is a sibling: the frozen snapshot replaces #panel-questions.innerHTML -->
   <div class="q-toolbar hidden" id="qToolbar">
     <span class="hint" id="qModeNote">Live data</span>
-    <button type="button" class="page-btn" id="qLegacyBtn" aria-pressed="false">Legacy answers</button>
+    <button type="button" class="page-btn" id="qLegacyBtn" aria-pressed="false">Midterm questions</button>
   </div>
   <section id="panel-questions" class="hidden">
     <div class="stack">
@@ -574,7 +589,9 @@
       TABS.forEach(t => { view[t.id] = { page: 1, q: '', showTable: false }; });
       let activeTab = 'home';                                      // home | tables | anomalies
       let activeSub = 'shipments';                                 // which table is open inside Tables
-      let drill = null;                                            // active drill-down {key,id,name}
+      let tags = [];                                               // active shipment filters (text or entity)
+      let filterIndex = [];                                        // searchable clients/companies/vessels/ports
+      let filterMatches = [];                                      // current Filters panel results
       let theme = localStorage.getItem('theme') === 'dark' ? 'dark' : 'light';
       const charts = new Map();                                    // canvas id -> Chart instance
       let qLegacy = false;                                         // Questions tab: show the frozen snapshot instead of live results
@@ -601,10 +618,12 @@
       const panelQuestions = document.getElementById('panel-questions');
       const settingsEl = document.getElementById('settings');
       const lastUpdated = document.getElementById('lastUpdated');
-      const clientFilter = document.getElementById('clientFilter');
       const searchInput = document.getElementById('searchInput');
       const themeBtn = document.getElementById('themeBtn');
-      const drillChip = document.getElementById('drillChip');
+      const filterTagsEl = document.getElementById('filterTags');
+      const filterPicker = document.getElementById('filterPicker');
+      const filterSearch = document.getElementById('filterSearch');
+      const filterResults = document.getElementById('filterResults');
       const qModeBtn = document.getElementById('qLegacyBtn');
       const qModeNote = document.getElementById('qModeNote');
       const qToolbar = document.getElementById('qToolbar');
@@ -684,7 +703,7 @@
           TABS.forEach((t, i) => { data[t.id] = results[i]; });
           allRows = joinedShipments();
           lastUpdated.textContent = new Date().toLocaleTimeString();
-          populateClients();
+          populateFilterIndex();
           populatePorts();
           populateMonths();
           renderTabs();
@@ -771,13 +790,28 @@
         drawRanked(DIM_CHARTS.companies, 'hCompanies');
       }
 
-      // ── jump to the shipments tab filtered to one client/company/ship
-      function setDrill(key, id, name) {
-        drill = { key, id: String(id), name };
+      // ── jump to Shipments with an entity tag (one per entity type)
+      const TAG_LABELS = { ClientID: 'Client', CompanyID: 'Company', ShipID: 'Vessel', port: 'Port' };
+      function addEntityTag(key, id, name) {
+        tags = tags.filter(t => t.key !== key);
+        tags.push({ type: key, key, id: String(id), name });
+        view.shipments.page = 1;
         activeTab = 'tables';
         activeSub = 'shipments';
         renderTabs();
         renderActive();
+      }
+
+      // free text becomes a tag on Enter/Apply, so the input is free for the next term
+      function addTextTag(value) {
+        const text = String(value || '').trim();
+        if (!text) return;
+        if (!tags.some(t => t.type === 'text' && t.text.toLowerCase() === text.toLowerCase())) {
+          tags.push({ type: 'text', text });
+        }
+        searchInput.value = '';
+        view.shipments.page = 1;
+        renderShipments();
       }
 
       // ── jump to the Ports tab focused on one port (clicked in the route column)
@@ -794,20 +828,16 @@
         renderActive();
       }
 
-      // ── client dropdown (once)
-      function populateClients() {
-        const current = clientFilter.value;
-        const names = (data.clients || [])
-          .filter(c => c.Client_Name)
-          .sort((a, b) => a.Client_Name.localeCompare(b.Client_Name));
-        clientFilter.innerHTML = '<option value="">All clients</option>';
-        names.forEach(c => {
-          const o = document.createElement('option');
-          o.value = c.ClientID;
-          o.textContent = c.Client_Name;
-          clientFilter.appendChild(o);
-        });
-        clientFilter.value = current;
+      // ── searchable entity index for the Filters panel (once)
+      function populateFilterIndex() {
+        const mk = (label, key, rows, idKey, nameKey) =>
+          (rows || []).filter(r => r[nameKey]).map(r => ({ label, key, id: String(r[idKey]), name: r[nameKey] }));
+        filterIndex = [
+          ...mk('Client', 'ClientID', data.clients, 'ClientID', 'Client_Name'),
+          ...mk('Company', 'CompanyID', data.companies, 'CompanyID', 'Company_Name'),
+          ...mk('Vessel', 'ShipID', data.ships, 'ShipID', 'Vessel_Name'),
+          ...mk('Port', 'port', data.ports, 'PortID', 'Port_Name')
+        ];
       }
 
       // ── port picker (once): searchable checkbox list used for comparison
@@ -887,30 +917,63 @@
         }).filter(s => s.ShipmentID != null);
       }
 
+      // ── text search across the columns the old search bar covered
+      function shipmentMatchesText(r, q) {
+        return String(r.ShipmentID).includes(q) ||
+          (r.date || '').includes(q) ||
+          (r.clientName || '').toLowerCase().includes(q) ||
+          (r.clientCompany || '').toLowerCase().includes(q) ||
+          (r.companyName || '').toLowerCase().includes(q) ||
+          (r.vessel || '').toLowerCase().includes(q) ||
+          (r.portFrom || '').toLowerCase().includes(q) ||
+          (r.portTo || '').toLowerCase().includes(q);
+      }
+
+      // match one active tag against a joined shipment row
+      function tagMatches(r, t) {
+        if (t.type === 'text') return shipmentMatchesText(r, t.text.toLowerCase());
+        if (t.key === 'port') return String(r.PortDeparture) === t.id || String(r.PortArrival) === t.id;
+        return String(r[t.key]) === t.id;
+      }
+
+      // Filters panel: search all four dimensions at once and show the first matches
+      function renderFilterResults(q) {
+        const term = String(q || '').trim().toLowerCase();
+        if (!term) {
+          filterMatches = [];
+          filterResults.innerHTML = '';
+          return;
+        }
+        filterMatches = filterIndex.filter(item => item.name.toLowerCase().includes(term)).slice(0, 12);
+        filterResults.innerHTML = filterMatches.length
+          ? filterMatches.map((item, i) =>
+              `<button type="button" class="filter-result" data-filter="${i}"><span>${item.label}</span>${item.name}</button>`
+            ).join('')
+          : '<div class="empty" style="padding:1rem .5rem">No matching names.</div>';
+      }
+
+      // active tags: text terms plus one removable chip per entity filter
+      function renderFilterTags() {
+        filterTagsEl.classList.toggle('hidden', !tags.length);
+        if (!tags.length) { filterTagsEl.innerHTML = ''; return; }
+        const prefix = tags.some(t => t.type !== 'text')
+          ? '<span class="tag-prefix">Showing shipments for</span>'
+          : '';
+        filterTagsEl.innerHTML = prefix + tags.map((t, i) => {
+          const label = t.type === 'text' ? `“${t.text}”` : `${TAG_LABELS[t.key]}: ${t.name}`;
+          return `<span class="tag">${label}<button type="button" data-tag="${i}" title="Remove filter">✕</button></span>`;
+        }).join('');
+      }
+
       // ── Shipments tab
       function renderShipments() {
         let rows = allRows;
 
-        // filters
+        // live text in the box plus every committed tag (ANDed)
         const q = searchInput.value.trim().toLowerCase();
-        if (q) {
-          rows = rows.filter(r =>
-            String(r.ShipmentID).includes(q) ||
-            (r.date || '').includes(q) ||
-            (r.clientName || '').toLowerCase().includes(q) ||
-            (r.clientCompany || '').toLowerCase().includes(q) ||
-            (r.companyName || '').toLowerCase().includes(q) ||
-            (r.vessel || '').toLowerCase().includes(q) ||
-            (r.portFrom || '').toLowerCase().includes(q) ||
-            (r.portTo || '').toLowerCase().includes(q)
-          );
-        }
-        if (clientFilter.value) rows = rows.filter(r => String(r.ClientID) === clientFilter.value);
-        if (drill) rows = rows.filter(r => String(r[drill.key]) === drill.id);
-
-        // chip showing the active drill-down
-        drillChip.classList.toggle('hidden', !drill);
-        if (drill) drillChip.innerHTML = `Showing shipments for <strong>${drill.name}</strong> <button title="Clear">✕</button>`;
+        if (q) rows = rows.filter(r => shipmentMatchesText(r, q));
+        if (tags.length) rows = rows.filter(r => tags.every(t => tagMatches(r, t)));
+        renderFilterTags();
 
         // table
         const p = view.shipments;
@@ -925,7 +988,7 @@
           const port = e.target.closest('[data-port]');
           if (port) { showPort(port.dataset.port); return; }
           const el = e.target.closest('[data-key]');
-          if (el) setDrill(el.dataset.key, el.dataset.id, el.dataset.name);
+          if (el) addEntityTag(el.dataset.key, el.dataset.id, el.dataset.name);
         };
         // id-bearing cells become clickable chips; rows with a missing FK stay plain text
         const chip = (key, id, name, text) => id == null
@@ -950,23 +1013,25 @@
               </tr>`).join('')
           : '<tr><td colspan="10" class="empty">No rows match your filters.</td></tr>';
 
-        // totals footer: only for a clicked client/company/ship; the entity total ignores search
+        // totals footer: always show the filtered total; entity tags also get their own total
         const tfoot = document.getElementById('shipTotals');
-        if (drill) {
-          const entity = allRows.filter(r => String(r[drill.key]) === drill.id);
-          const sumOf = (list, f) => Math.round(list.reduce((a, x) => a + (f(x) || 0), 0)).toLocaleString();
-          const totalRow = (label, list) => `
-            <tr class="total-row">
-              <td>${label}</td>
-              <td>${list.length.toLocaleString()} shipment${list.length === 1 ? '' : 's'}</td>
-              <td colspan="5"></td>
-              <td>${sumOf(list, r => r.ShipmentLoad_Tonnes)}</td>
-              <td>${sumOf(list, r => r.ShipmentTotalCost)}</td>
-              <td>${sumOf(list, r => r.DistanceTravelled_Nautical_Miles)}</td>
-            </tr>`;
-          tfoot.innerHTML = totalRow('Total', entity) + totalRow('Filtered', rows);
+        const sumOf = (list, f) => Math.round(list.reduce((a, x) => a + (f(x) || 0), 0)).toLocaleString();
+        const totalRow = (label, list) => `
+          <tr class="total-row">
+            <td>${label}</td>
+            <td>${list.length.toLocaleString()} shipment${list.length === 1 ? '' : 's'}</td>
+            <td colspan="5"></td>
+            <td>${sumOf(list, r => r.ShipmentLoad_Tonnes)}</td>
+            <td>${sumOf(list, r => r.ShipmentTotalCost)}</td>
+            <td>${sumOf(list, r => r.DistanceTravelled_Nautical_Miles)}</td>
+          </tr>`;
+        const entityTags = tags.filter(t => t.type !== 'text');
+        if (entityTags.length) {
+          // the entity total ignores the search box, matching the old drill behavior
+          const entityRows = allRows.filter(r => entityTags.every(t => tagMatches(r, t)));
+          tfoot.innerHTML = totalRow(entityTags.map(t => t.name).join(' + '), entityRows) + totalRow('Filtered', rows);
         } else {
-          tfoot.innerHTML = '';
+          tfoot.innerHTML = totalRow('Total', rows);
         }
 
         renderPager('pagination', p.page, totalPages, (n) => { view.shipments.page = n; renderShipments(); }, rows.length, slice.length);
@@ -1494,7 +1559,7 @@
 
       // button label + "frozen on" date; also flips aria-pressed for the active style
       function syncQMode() {
-        qModeBtn.textContent = qLegacy ? 'Back to live' : 'Legacy answers';
+        qModeBtn.textContent = qLegacy ? 'Back to live' : 'Midterm questions';
         qModeBtn.setAttribute('aria-pressed', String(qLegacy));
         const taken = window.LEGACY_QUESTIONS_TAKEN;
         const when = taken
@@ -1545,7 +1610,7 @@
         'Who are the companies for Alice Miller?',
         'What departed from Port Singapore Pier 9 in September 2026?'
       ];
-      const ASK_METRIC_WORDS = /\b(shipments?|costs?|load|tonnes?|distance|ports?|compan(y|ies)|clients?|vessels?|ships?|months?|total|average|avg|highest|top|most|least|revenue|income|departures?)\b/;
+      const ASK_METRIC_WORDS = /\b(shipments?|costs?|load|tonnes?|distance|ports?|compan(y|ies)|clients?|vessels?|ships?|months?|total|average|avg|highest|top|most|least|revenue|income|departures?|spen[dt]|spending|money|paid|pay)\b/;
 
       const fmtNum = v => Math.round(Number(v) || 0).toLocaleString('en-US');
 
@@ -1564,11 +1629,15 @@
         return [...m.values()];
       }
 
-      const byCost = rows => groupTotals(rows, r => r.companyName).sort((a, b) => b.cost - a.cost);
       const topBy = (rows, keyFn, limit, unit) => groupTotals(rows, keyFn)
         .sort((a, b) => b.count - a.count)
         .slice(0, limit)
         .map(e => `${e.key} (${e.count} ${unit}, US$ ${fmtNum(e.cost)})`)
+        .join(' ; ');
+      const topByCost = (rows, keyFn, limit) => groupTotals(rows, keyFn)
+        .sort((a, b) => b.cost - a.cost)
+        .slice(0, limit)
+        .map(e => `${e.key} (${e.count} shipments, US$ ${fmtNum(e.cost)})`)
         .join(' ; ');
 
       // facts about one matched entity: totals, date range, companies, vessels, routes
@@ -1621,12 +1690,37 @@
           { label: 'port',    rows: data.ports,     id: 'PortID',    nameKey: 'Port_Name', hit: (r, id) => String(r.PortDeparture) === id || String(r.PortArrival) === id }
         ];
         const out = [];
+        const shipCount = list => new Set(list.map(r => r.ShipID)).size;
+        const costOf = list => list.reduce((a, r) => a + (r.ShipmentTotalCost || 0), 0);
+        // per-month shipment and distinct-ship counts answer "...in September 2026"
+        const byMonth = list => {
+          const months = new Map();
+          list.forEach(r => {
+            const k = (r.date || '').slice(0, 7);
+            if (!k) return;
+            const e = months.get(k) || { count: 0, ships: new Set() };
+            e.count += 1;
+            e.ships.add(r.ShipID);
+            months.set(k, e);
+          });
+          return [...months.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+            .map(([k, e]) => `${monthLabel(k, true)}: ${e.count} shipments, ${e.ships.size} ships`).join(', ');
+        };
         dims.forEach(d => {
           (d.rows || [])
             .filter(row => nameMatches(row[d.nameKey], q, qTokens))
             .slice(0, 2)
             .forEach(row => {
-              const rows = allRows.filter(r => d.hit(r, String(row[d.id])));
+              const id = String(row[d.id]);
+              if (d.label === 'port') {
+                // a port line must separate departures from arrivals, and count distinct ships
+                const dep = allRows.filter(r => String(r.PortDeparture) === id);
+                const arr = allRows.filter(r => String(r.PortArrival) === id);
+                if (!dep.length && !arr.length) return;
+                out.push(`MATCH port "${row[d.nameKey]}": ${dep.length} departures by ${shipCount(dep)} ships (US$ ${fmtNum(costOf(dep))}); ${arr.length} arrivals by ${shipCount(arr)} ships (US$ ${fmtNum(costOf(arr))}) | departures by month: ${byMonth(dep) || 'none'} | arrivals by month: ${byMonth(arr) || 'none'}`);
+                return;
+              }
+              const rows = allRows.filter(r => d.hit(r, id));
               if (rows.length) out.push(`MATCH ${d.label} "${row[d.nameKey]}": ${summarizeRows(rows)}`);
             });
         });
@@ -1663,14 +1757,16 @@
           header,
           totalLine,
           ...matches,
+          'TOP CLIENTS BY COST: ' + topByCost(allRows, r => r.clientName, 10),
+          'TOP COMPANIES BY COST: ' + topByCost(allRows, r => r.companyName, 10),
+          'TOP SHIPS BY COST: ' + topByCost(allRows, r => r.vessel, 10),
+          'TOP DEPARTURE PORTS: ' + topBy(allRows, r => r.portFrom, 10, 'departures'),
+          'TOP ARRIVAL PORTS: ' + topBy(allRows, r => r.portTo, 10, 'arrivals'),
           'BY MONTH: ' + groupTotals(allRows, r => (r.date || '').slice(0, 7))
             .sort((a, b) => a.key.localeCompare(b.key))
             .map(e => `${monthLabel(e.key, true)}: ${e.count} shipments, US$ ${fmtNum(e.cost)}`).join(' ; '),
-          'TOP COMPANIES BY COST: ' + byCost(allRows).slice(0, 10)
-            .map(e => `${e.key} (${e.count} shipments, US$ ${fmtNum(e.cost)})`).join(' ; '),
           'TOP CLIENTS BY SHIPMENTS: ' + topBy(allRows, r => r.clientName, 10, 'shipments'),
           'TOP SHIPS BY SHIPMENTS: ' + topBy(allRows, r => r.vessel, 10, 'shipments'),
-          'TOP DEPARTURE PORTS: ' + topBy(allRows, r => r.portFrom, 10, 'departures'),
           'COMPANY COUNTRIES: ' + groupTotals(allRows, r => r.companyCountry)
             .sort((a, b) => b.count - a.count).slice(0, 10)
             .map(e => `${e.key} (${e.count})`).join(' ; '),
@@ -1838,6 +1934,18 @@
           notes.length ? `resolved: ${notes.join(' | ')}` : ''
         ].filter(Boolean).join('\n');
 
+        // aggregate without groupBy: one total for the filtered rows
+        if (!spec.groupBy && spec.aggregate) {
+          const agg = spec.aggregate;
+          const sum = f => rows.reduce((a, r) => a + (Number(f(r)) || 0), 0);
+          const parts = [];
+          if (agg.count) parts.push(`${rows.length} shipments`);
+          if (agg.sumCost) parts.push(`cost US$ ${fmtNum(sum(r => r.ShipmentTotalCost))}`);
+          if (agg.sumLoad) parts.push(`load ${fmtNum(sum(r => r.ShipmentLoad_Tonnes))} t`);
+          if (agg.avgDistance) parts.push(`avg distance ${fmtNum(sum(r => r.DistanceTravelled_Nautical_Miles) / rows.length)} nm`);
+          return { result: `${header}\nTOTAL: ${parts.join(' | ')}` };
+        }
+
         if (spec.groupBy) {
           const get = ASK_FIELDS[spec.groupBy];
           if (!get) throw new Error('fallback');
@@ -1856,8 +1964,11 @@
           const sortField = (spec.sort && spec.sort.field) || 'count';
           const dir = (spec.sort && spec.sort.dir) === 'asc' ? 1 : -1;
           const limit = Math.min(spec.limit || 15, 50);
+          const sortValue = e => sortField === 'avgDistance' ? e.avgDistance / e.count : (e[sortField] || 0);
           const list = [...groups.values()]
-            .sort((a, b) => dir * ((sortField === 'key' ? a.key.localeCompare(b.key) : (a[sortField] || 0) - (b[sortField] || 0))))
+            .sort((a, b) => sortField === 'key'
+              ? dir * a.key.localeCompare(b.key)
+              : dir * (sortValue(a) - sortValue(b)))
             .slice(0, limit)
             .map(e => {
               const parts = [e.key, `shipments ${e.count}`];
@@ -2160,7 +2271,7 @@
         const d = DRILL[tabId];
         tbody.onclick = d ? (e) => {
           const tr = e.target.closest('tr[data-id]');
-          if (tr) setDrill(d.key, tr.dataset.id, tr.dataset.name);
+          if (tr) addEntityTag(d.key, tr.dataset.id, tr.dataset.name);
         } : null;
 
         tbody.innerHTML = slice.length
@@ -2216,8 +2327,24 @@
       applyTheme();
 
       // ── events
-      drillChip.addEventListener('click', (e) => {
-        if (e.target.tagName === 'BUTTON') { drill = null; renderShipments(); }
+      filterTagsEl.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-tag]');
+        if (!b) return;
+        tags.splice(Number(b.dataset.tag), 1);
+        view.shipments.page = 1;
+        renderShipments();
+      });
+
+      filterSearch.addEventListener('input', (e) => renderFilterResults(e.target.value));
+      filterResults.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-filter]');
+        if (!b) return;
+        const item = filterMatches[Number(b.dataset.filter)];
+        if (!item) return;
+        addEntityTag(item.key, item.id, item.name);
+        filterSearch.value = '';
+        filterResults.innerHTML = '';
+        filterPicker.open = false;
       });
 
       themeBtn.addEventListener('click', () => {
@@ -2233,8 +2360,12 @@
         loadAll();
       });
       searchInput.addEventListener('input', () => { view.shipments.page = 1; renderShipments(); });
-      document.getElementById('applyFilter').addEventListener('click', () => { view.shipments.page = 1; renderShipments(); });
-      clientFilter.addEventListener('change', () => { view.shipments.page = 1; renderShipments(); });
+      searchInput.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        addTextTag(searchInput.value);
+      });
+      document.getElementById('applyFilter').addEventListener('click', () => addTextTag(searchInput.value));
       document.getElementById('volumeGrain').addEventListener('change', renderShipments);
       document.getElementById('incomeGrain').addEventListener('change', renderShipments);
 

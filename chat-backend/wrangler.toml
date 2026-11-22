@@ -9,4 +9,5 @@ compatibility_date = "2026-11-01"
 # Add your custom domain here if you ever stop using GitHub Pages.
 ALLOWED_ORIGIN = "https://griefield.github.io,http://localhost:4173,http://127.0.0.1:4173"
 # Optional: models change over time, so the model name is a var.
-GEMINI_MODEL = "gemini-3.5-flash-lite"
+GEMINI_MODEL = "gemini-4-hydrogen"
+#models: gemini-3.5-flash-lite, Gemini-3.8-Flash, Gemini 3 Flash, gemini-4-hydrogen

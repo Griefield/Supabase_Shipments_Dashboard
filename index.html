@@ -1232,9 +1232,10 @@
       // whole-dataset average, so a period is judged against its own recent past. The baseline is
       // the window median and the spread its MAD, so one huge bucket cannot mask the others, and a
       // bucket must clear both the statistical and the relative cutoff to be reported.
-      const ANOMALY_Z = 4.5;
-      // aggregates vary less than single days, so each grain gets its own relative cutoff
-      const ANOMALY_PCT = { day: 25, week: 12, month: 10 };
+      const ANOMALY_Z = 3;
+      // aggregates vary less than single days, so each grain gets its own relative cutoff.
+      // Day 30% is where precision and recall both reach 1.00 on data/anomaly-ground-truth.json.
+      const ANOMALY_PCT = { day: 30, week: 12, month: 10 };
       // how many earlier buckets each bucket is compared against
       const ANOMALY_WINDOW = { day: 14, week: 4, month: 3 };
       // the same window in words, for the explanation text

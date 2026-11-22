@@ -128,6 +128,8 @@
   .anomaly-badge.dip{background:var(--warn); color:#1f2937}
   .anomaly-why{font-size:.82rem; color:var(--muted); margin-top:.25rem}
   .anomaly-why strong{color:var(--accent)}
+  .anomaly-why p{margin:.35rem 0 0; line-height:1.45}
+  .anomaly-label{display:inline-block; min-width:6.8rem; font-size:.68rem; font-weight:600; letter-spacing:.04em; text-transform:uppercase; color:var(--muted)}
   .anomaly-more{font-size:.8rem; color:var(--muted); margin-top:.5rem}
   /* Questions tab: fixed-height result lists with their own end/top control */
   .scroll-table{max-height:320px; overflow:auto}
@@ -399,8 +401,15 @@
     <div class="stack">
       <div class="chart-card">
         <div class="chart-head">
-          <h3>Income from Costs · daily</h3>
-          <span class="hint" id="anomalySummary">—</span>
+          <h3 id="anomalyTitle">Income from Costs · Daily</h3>
+          <div class="chart-controls">
+            <span class="hint" id="anomalySummary">—</span>
+            <select class="select select-sm" id="anomalyGrain" title="Group anomalies by">
+              <option value="day" selected>Daily</option>
+              <option value="week">Weekly</option>
+              <option value="month">Monthly</option>
+            </select>
+          </div>
         </div>
         <div class="chart-box"><canvas id="anomalyIncome"></canvas></div>
       </div>
@@ -1218,13 +1227,18 @@
         });
       }
 
-      // ── Anomalies: flag days whose income is far from the typical day
-      // Robust z-score (median + MAD), so one huge day cannot mask the others.
-      // A day that moves more than 25% from the median is reported even when
+      // ── Anomalies: flag day/week/month buckets whose income is far from typical
+      // Robust z-score (median + MAD), so one huge bucket cannot mask the others.
+      // A bucket that moves more than 25% from the median is reported even when
       // the spread keeps its z-score below the strict cutoff.
       const ANOMALY_Z = 4.5;
-      const ANOMALY_PCT = 25;
-      const ANOMALY_MIN_DAYS = 10;
+      // aggregates vary less than single days, so each grain gets its own relative cutoff
+      const ANOMALY_PCT = { day: 25, week: 12, month: 10 };
+      // weekly/monthly buckets are far fewer than days, so each grain needs its own minimum
+      const ANOMALY_MIN_BUCKETS = { day: 10, week: 6, month: 4 };
+      const ANOMALY_GRAIN_LABEL = { day: 'Daily', week: 'Weekly', month: 'Monthly' };
+      const ANOMALY_UNIT = { day: 'day', week: 'week', month: 'month' };
+      let anomalyGrain = 'day';
 
       // middle value of a numeric list; 0 for an empty list
       function median(values) {
@@ -1234,53 +1248,76 @@
         return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
       }
 
-      // daily income outliers plus the facts needed to explain each one
-      function detectIncomeAnomalies(rows) {
-        // group cost and shipment count per day; empty days are not anomalies
-        const byDay = new Map();
+      // income outliers for one bucket size plus the facts needed to explain each one
+      function detectIncomeAnomalies(rows, grain) {
+        const g = GRAINS[grain];
+        // group cost, shipment count and rows per bucket; empty buckets are not anomalies
+        const byBucket = new Map();
         rows.forEach(r => {
           if (!r.date) return;
-          const e = byDay.get(r.date) || { total: 0, count: 0, rows: [] };
+          const key = g.key(r.date);
+          const e = byBucket.get(key) || { total: 0, count: 0, rows: [] };
           e.total += r.ShipmentTotalCost || 0;
           e.count += 1;
           e.rows.push(r);
-          byDay.set(r.date, e);
+          byBucket.set(key, e);
         });
 
-        const days = [...byDay.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-        if (days.length < ANOMALY_MIN_DAYS) return { baseline: null, items: [] };
+        const buckets = [...byBucket.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+        // drop boundary buckets: the first/last day, and weeks/months the data only partly covers,
+        // otherwise a partial period always looks like a huge dip
+        const dates = rows.map(r => r.date).filter(Boolean).sort();
+        const firstDate = dates[0];
+        const lastDate = dates[dates.length - 1];
+        const complete = ([key]) => {
+          if (grain === 'day') return key !== firstDate && key !== lastDate;
+          if (grain === 'month') {
+            const start = key + '-01';
+            const end = new Date(Date.UTC(+key.slice(0, 4), +key.slice(5, 7), 0)).toISOString().slice(0, 10);
+            return firstDate <= start && lastDate >= end;
+          }
+          const end = new Date(key + 'T00:00:00Z');
+          end.setUTCDate(end.getUTCDate() + 6);
+          return firstDate <= key && lastDate >= end.toISOString().slice(0, 10);
+        };
+        const usable = buckets.filter(complete);
+        const minBuckets = ANOMALY_MIN_BUCKETS[grain] || 10;
+        if (usable.length < minBuckets) return { baseline: null, items: [] };
 
-        // baseline: median day and its median absolute deviation
-        const totals = days.map(([, e]) => e.total);
+        // baseline: median bucket and its median absolute deviation
+        const totals = usable.map(([, e]) => e.total);
         const med = median(totals);
         let spread = median(totals.map(v => Math.abs(v - med)));
         if (!spread) {
-          // MAD is 0 when most days share a value; mean absolute deviation still sees the outlier
+          // MAD is 0 when most buckets share a value; mean absolute deviation still sees the outlier
           spread = totals.reduce((a, v) => a + Math.abs(v - med), 0) / totals.length;
         }
         if (!spread) return { baseline: { median: med }, items: [] };
 
-        const typicalCount = median(days.map(([, e]) => e.count));
-        // distinct companies per day tells whether a day was quiet or busy
-        const typicalCompanies = median(days.map(([, e]) => new Set(e.rows.map(r => r.companyName)).size));
+        const typicalCount = median(usable.map(([, e]) => e.count));
+        // distinct companies per bucket tells whether it was quiet or busy
+        const typicalCompanies = median(usable.map(([, e]) => new Set(e.rows.map(r => r.companyName)).size));
 
-        // TimeDIM comparison: the usual shipment count for each weekday
-        const byWeekday = new Map();
-        days.forEach(([, e]) => {
-          const dow = e.rows[0].dayOfWeek;
-          if (!dow) return;
-          if (!byWeekday.has(dow)) byWeekday.set(dow, []);
-          byWeekday.get(dow).push(e.count);
-        });
-        const weekdayMedians = new Map([...byWeekday].map(([dow, counts]) => [dow, median(counts)]));
+        // TimeDIM comparison only makes sense for single days
+        const weekdayMedians = new Map();
+        if (grain === 'day') {
+          const byWeekday = new Map();
+          usable.forEach(([, e]) => {
+            const dow = e.rows[0].dayOfWeek;
+            if (!dow) return;
+            if (!byWeekday.has(dow)) byWeekday.set(dow, []);
+            byWeekday.get(dow).push(e.count);
+          });
+          [...byWeekday].forEach(([dow, counts]) => weekdayMedians.set(dow, median(counts)));
+        }
 
         const items = [];
-        days.forEach(([key, e]) => {
+        usable.forEach(([key, e]) => {
           const z = 0.6745 * (e.total - med) / spread;
           const pct = med ? (e.total - med) / med * 100 : null;
           // flag on either rule: clear statistical outlier or extreme relative change
           const isOutlier = Math.abs(z) >= ANOMALY_Z;
-          const isExtreme = pct != null && Math.abs(pct) >= ANOMALY_PCT;
+          const isExtreme = pct != null && Math.abs(pct) >= ANOMALY_PCT[grain];
           if (!isOutlier && !isExtreme) return;
 
           // who caused it: top company by cost and the largest single shipment
@@ -1289,14 +1326,14 @@
           const [topCompany, topCost] = [...byCompany.entries()].sort((a, b) => b[1] - a[1])[0] || ['—', 0];
           const topRow = e.rows.find(r => r.companyName === topCompany);
           const biggest = e.rows.reduce((a, r) => ((r.ShipmentTotalCost || 0) > (a.ShipmentTotalCost || 0) ? r : a), e.rows[0]);
-          const weekday = e.rows[0].dayOfWeek || '';
+          const weekday = grain === 'day' ? (e.rows[0].dayOfWeek || '') : '';
           items.push({
-            key, total: e.total, count: e.count, z, typicalCount, typicalCompanies, pct,
+            key, total: e.total, median: med, count: e.count, z, typicalCount, typicalCompanies, pct,
             companies: new Set(e.rows.map(r => r.companyName)).size,
             weekday, weekdayMedian: weekdayMedians.has(weekday) ? weekdayMedians.get(weekday) : null,
             topCompany, topCost, topShare: e.total ? topCost / e.total * 100 : 0,
             topCompanyCountry: topRow ? topRow.companyCountry : '',
-            // dimension-table details for the largest shipment on that day
+            // dimension-table details for the largest shipment in the bucket
             biggestId: biggest ? biggest.ShipmentID : null,
             biggestCost: biggest ? biggest.ShipmentTotalCost || 0 : 0,
             biggestClient: biggest ? biggest.clientName : '',
@@ -1308,61 +1345,107 @@
           });
         });
 
-        // ISO dates sort lexicographically, so the list reads oldest → newest
+        // ISO keys sort lexicographically, so the list reads oldest → newest
         items.sort((a, b) => a.key.localeCompare(b.key));
         return { baseline: { median: med, typicalCount }, items };
       }
 
-      // one-sentence "why", comparing the day with the dataset and citing the
-      // dimension tables (company, client, ship, ports, weekday)
-      function anomalyWhy(a) {
-        const above = (a.pct ?? a.z) > 0;
+      // readable bucket name for the explanation list
+      function anomalyBucketLabel(grain, key) {
+        if (grain === 'month') {
+          return new Date(key + '-01T00:00:00Z').toLocaleDateString('en-US',
+            { month: 'long', year: 'numeric', timeZone: 'UTC' });
+        }
+        const opts = grain === 'week'
+          ? { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }
+          : { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' };
+        const full = new Date(key + 'T00:00:00Z').toLocaleDateString('en-US', opts);
+        return grain === 'week' ? `Week of ${full}` : full;
+      }
+
+      // suggested next step: where to look first, then whether volume or price explains it
+      function anomalySuggestion(a, grain) {
+        const unit = ANOMALY_UNIT[grain];
+        const spike = a.total >= a.median;
+        const usualN = Math.round(a.typicalCount);
+        const ratio = a.typicalCount ? a.count / a.typicalCount : 1;
+        const start = a.topShare >= 20
+          ? `Start with <strong>${a.topCompany}</strong> (${Math.round(a.topShare)}% of the ${unit})`
+          : (a.biggestId != null
+              ? `Start with the largest record, shipment #${a.biggestId}`
+              : 'Start with the top company');
+        let action;
+        if (spike) {
+          action = ratio >= 1.25
+            ? `Volume was ${a.count} vs the usual ${usualN}, so confirm handling capacity for the extra shipments and rule out duplicate records.`
+            : ratio <= 0.75
+              ? `Volume was actually lower (${a.count} vs ${usualN}), so the rise came from higher-value shipments; verify the largest invoice and the top company's billing.`
+              : `Volume was close to usual (${a.count} vs ${usualN}), so verify the largest invoice and the top company's billing before treating it as a real peak.`;
+        } else {
+          action = ratio <= 0.75
+            ? `Only ${a.count} shipments vs the usual ${usualN}, so check for missing or delayed entries on that ${unit} before treating it as a real drop.`
+            : ratio >= 1.25
+              ? `Volume was actually higher (${a.count} vs ${usualN}), so the drop came from cheaper or lower-value cargo; compare the largest records with the previous ${unit}.`
+              : `Volume was close to usual (${a.count} vs ${usualN}), so compare the largest records with the previous ${unit} to see whether cheaper routes or lower-value cargo caused the drop.`;
+        }
+        return `${start}. ${action}`;
+      }
+
+      // four labeled lines: what changed, volume, who drove it, and what to check
+      function anomalyWhy(a, grain) {
+        const unit = ANOMALY_UNIT[grain];
+        const spike = a.total >= a.median;
+        const pct = a.pct == null ? null : Math.round(Math.abs(a.pct));
         const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+        const total = Math.round(a.total).toLocaleString();
+        const typical = Math.round(a.median).toLocaleString();
         const usualN = Math.round(a.typicalCount);
         const usualCo = Math.round(a.typicalCompanies);
-        let text = above
-          ? `${plural(a.count, 'shipment', 'shipments')} from ${plural(a.companies, 'company', 'companies')}, above the usual ${usualN} from ${usualCo}`
-          : `only ${plural(a.count, 'shipment', 'shipments')} from ${plural(a.companies, 'company', 'companies')} (usual ${usualN} from ${usualCo})`;
-        if (a.weekday && a.weekdayMedian != null) text += `, against a ${a.weekday} median of ${Math.round(a.weekdayMedian)}`;
-        text += '. ';
+
+        const change = pct == null ? '' : `, ${pct}% ${spike ? 'above' : 'below'}`;
+        const what = `Income ${spike ? 'jumped to' : 'fell to'} <strong>US$ ${total}</strong>${change} the typical ${unit} of US$ ${typical}.`;
+
+        let volume = `${plural(a.count, 'shipment', 'shipments')} from ${plural(a.companies, 'company', 'companies')}, versus the usual ${usualN} from ${usualCo}.`;
+        if (grain === 'day' && a.weekday && a.weekdayMedian != null) {
+          volume += ` The ${a.weekday} median is ${Math.round(a.weekdayMedian)} shipments.`;
+        }
 
         const country = a.topCompanyCountry ? ` (${a.topCompanyCountry})` : '';
-        if (a.topShare >= 20) {
-          text += `The top company was ${a.topCompany}${country} at US$ ${Math.round(a.topCost).toLocaleString()} (${Math.round(a.topShare)}% of the day)`;
-        } else {
-          // a diffuse day: naming a "top" company would overstate its role
-          text += `No single company dominated: the largest, ${a.topCompany}${country}, was only ${Math.round(a.topShare)}% of the day at US$ ${Math.round(a.topCost).toLocaleString()}`;
-        }
+        let driver = a.topShare >= 20
+          ? `<strong>${a.topCompany}</strong>${country} provided ${Math.round(a.topShare)}% of income (US$ ${Math.round(a.topCost).toLocaleString()}).`
+          : `No single company dominated; the largest, <strong>${a.topCompany}</strong>${country}, was ${Math.round(a.topShare)}% of income.`;
         if (a.biggestId != null) {
           const client = a.biggestClient + (a.biggestClientCompany ? ` of ${a.biggestClientCompany}` : '');
           const vessel = a.biggestVessel + (a.biggestRegister ? ` (${a.biggestRegister})` : '');
-          text += `; the largest record was shipment #${a.biggestId} for ${client}, carried by ${vessel} from ${a.biggestFrom} to ${a.biggestTo}.`;
-        } else {
-          text += '.';
+          driver += ` The largest record was shipment #${a.biggestId} for ${client}, carried by ${vessel} from ${a.biggestFrom} to ${a.biggestTo}, at US$ ${Math.round(a.biggestCost).toLocaleString()}.`;
         }
-        return text;
+
+        return `<p><span class="anomaly-label">What changed</span>${what}</p>
+          <p><span class="anomaly-label">Volume</span>${volume}</p>
+          <p><span class="anomaly-label">Main driver</span>${driver}</p>
+          <p><span class="anomaly-label">Suggestion</span>${anomalySuggestion(a, grain)}</p>`;
       }
 
-      // daily income line with the flagged days painted red
-      function drawAnomalyChart(items) {
+      // income line for the selected grain with the flagged buckets painted red
+      function drawAnomalyChart(items, grain) {
         const flagged = new Set(items.map(a => a.key));
-        const keys = bucketKeys('day');
+        const keys = bucketKeys(grain);
         const sums = new Map();
         allRows.forEach(r => {
           if (!r.date) return;
-          const k = GRAINS.day.key(r.date);
+          const k = GRAINS[grain].key(r.date);
           sums.set(k, (sums.get(k) || 0) + (r.ShipmentTotalCost || 0));
         });
         const c = themeVars();
         mountChart('anomalyIncome', {
           type: 'line',
           data: {
-            labels: keys.map(GRAINS.day.label),
+            labels: keys.map(GRAINS[grain].label),
             datasets: [{
               label: 'Income (US$)',
               data: keys.map(k => Math.round(sums.get(k) || 0)),
               borderColor: c.ok, backgroundColor: alpha(c.ok, .12), fill: true, tension: .3,
-              // red, slightly larger points mark the flagged days
+              // red, slightly larger points mark the flagged buckets
               pointRadius: keys.map(k => flagged.has(k) ? 5 : 2),
               pointHitRadius: 10,
               pointBackgroundColor: keys.map(k => flagged.has(k) ? c.err : c.ok),
@@ -1371,7 +1454,7 @@
           },
           options: {
             responsive: true, maintainAspectRatio: false,
-            // clicking a flagged point jumps to that day's explanation below
+            // clicking a flagged point jumps to that bucket's explanation below
             onClick: (event, elements) => {
               if (!elements.length) return;
               const key = keys[elements[0].index];
@@ -1398,35 +1481,39 @@
 
       // Anomalies tab: recompute from the full dataset and repaint chart + list
       function renderAnomalies() {
-        const { baseline, items } = detectIncomeAnomalies(allRows);
-        drawAnomalyChart(items);
+        document.getElementById('anomalyGrain').value = anomalyGrain;
+        document.getElementById('anomalyTitle').textContent =
+          `Income from Costs · ${ANOMALY_GRAIN_LABEL[anomalyGrain]}`;
+        const { baseline, items } = detectIncomeAnomalies(allRows, anomalyGrain);
+        drawAnomalyChart(items, anomalyGrain);
 
         const summary = document.getElementById('anomalySummary');
         const listEl = document.getElementById('anomalyList');
+        const unit = ANOMALY_UNIT[anomalyGrain];
         if (!baseline) {
           summary.textContent = 'Not enough data';
-          listEl.innerHTML = '<div class="empty">At least 10 days of shipments are needed to spot anomalies.</div>';
+          listEl.innerHTML = `<div class="empty">At least ${ANOMALY_MIN_BUCKETS[anomalyGrain]} ${unit}s of shipments are needed to spot anomalies.</div>`;
           return;
         }
-        summary.textContent = `${items.length} found · typical day US$ ${Math.round(baseline.median).toLocaleString()} · ≥ ${ANOMALY_Z}σ or ±${ANOMALY_PCT}%`;
+        summary.textContent = `${items.length} found · typical ${unit} US$ ${Math.round(baseline.median).toLocaleString()} · ≥ ${ANOMALY_Z}σ or ±${ANOMALY_PCT[anomalyGrain]}%`;
         if (!items.length) {
-          listEl.innerHTML = '<div class="empty">No income anomalies detected at this sensitivity.</div>';
+          listEl.innerHTML = '<div class="empty">No income anomalies detected at this sensitivity. Boundary periods at the start and end of the data are excluded.</div>';
           return;
         }
 
         // cap the list so a noisy dataset cannot render hundreds of entries
         const shown = items.slice(0, 20);
         listEl.innerHTML = shown.map(a => {
-          const spike = a.z > 0;
+          const spike = a.total >= a.median;
           const pct = a.pct == null ? '' : `${a.pct > 0 ? '+' : ''}${Math.round(a.pct)}% vs typical`;
           return `<div class="anomaly-item" id="anomaly-${a.key}">
             <div class="anomaly-head">
               <span class="anomaly-badge ${spike ? 'spike' : 'dip'}">${spike ? '▲ Spike' : '▼ Dip'}</span>
-              <strong>${a.key}</strong>
+              <strong>${anomalyBucketLabel(anomalyGrain, a.key)}</strong>
               <span>US$ ${Math.round(a.total).toLocaleString()}</span>
               <span class="hint">${pct}</span>
             </div>
-            <div class="anomaly-why"><strong>What:</strong> income was ${spike ? 'far above' : 'far below'} a typical day. <strong>Why:</strong> ${anomalyWhy(a)}</div>
+            <div class="anomaly-why">${anomalyWhy(a, anomalyGrain)}</div>
           </div>`;
         }).join('') + (items.length > shown.length ? `<div class="anomaly-more">Showing first ${shown.length} of ${items.length}.</div>` : '');
       }
@@ -2450,6 +2537,10 @@
       });
       document.getElementById('hIncomeGrain').addEventListener('change', () => {
         drawIncomeChart(allRows, document.getElementById('hIncomeGrain').value, 'hIncome');
+      });
+      document.getElementById('anomalyGrain').addEventListener('change', (e) => {
+        anomalyGrain = e.target.value;
+        renderAnomalies();
       });
 
       // switching tables inside the Tables tab keeps each table's own search/page state

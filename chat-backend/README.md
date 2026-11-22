@@ -50,6 +50,7 @@ Expect `{"answer":"..."}`. A request with a disallowed `Origin` header returns 4
 | `GEMINI_API_KEY` | `wrangler secret` | AI Studio key |
 | `ALLOWED_ORIGIN` | `wrangler.toml` `[vars]` | comma-separated origins allowed to call it |
 | `GEMINI_MODEL` | `wrangler.toml` `[vars]` | model name; change if the default is retired |
+| `GEMINI_PROXY` | `wrangler.toml` binding | Durable Object that makes the Gemini call from a region Gemini serves; some edge colos (e.g. HKG) are refused with HTTP 400 |
 
 Rate limit: 20 requests per IP per hour, counted inside each Worker isolate.
 It is a brake on accidental quota burn, not a global quota.

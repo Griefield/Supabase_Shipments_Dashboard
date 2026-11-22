@@ -95,6 +95,29 @@ const SPEC_NUMBER_OPS = ['gt', 'gte', 'lt', 'lte', 'between'];
 const SPEC_AGGREGATES = ['count', 'sumCost', 'sumLoad', 'avgDistance'];
 const SPEC_SORT_FIELDS = ['count', 'sumCost', 'sumLoad', 'avgDistance', 'key'];
 
+// Transport only: performs the Gemini request from a pinned region so a
+// restricted edge colo (e.g. HKG) cannot block it. All prompt building and
+// validation stays in the Worker above.
+export class GeminiProxy {
+  constructor(state, env) {
+    this.env = env;
+  }
+
+  async fetch(request) {
+    const { model, payload } = await request.json();
+    const upstream = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': this.env.GEMINI_API_KEY },
+        body: JSON.stringify(payload)
+      });
+    // pass the provider status and body straight through; the Worker shapes errors
+    return new Response(await upstream.text(),
+      { status: upstream.status, headers: { 'content-type': 'application/json' } });
+  }
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -202,18 +225,23 @@ async function callGemini(env, systemPrompt, turns, temperature, maxOutputTokens
 
   let upstream;
   try {
-    upstream = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
-        body: JSON.stringify({
+    // The edge colo can be one Gemini refuses (e.g. HKG), so the outbound call
+    // is made from a Durable Object pinned to a supported region.
+    const stub = env.GEMINI_PROXY.get(
+      env.GEMINI_PROXY.idFromName('gemini'),
+      { locationHint: 'wnam' });
+    upstream = await stub.fetch('https://gemini-proxy/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        payload: {
           system_instruction: { parts: [{ text: systemPrompt }] },
           contents: turns,
           generationConfig
-        })
-      }
-    );
+        }
+      })
+    });
   } catch (err) {
     console.error('Gemini request failed:', err);
     throw new Error('network');

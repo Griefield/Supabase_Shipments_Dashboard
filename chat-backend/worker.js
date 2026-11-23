@@ -31,56 +31,73 @@ const DEFAULT_ORIGINS = [
 ];
 
 // The model answers from the packet, not from its own memory.
-const SYSTEM_PROMPT = `You are the assistant for a sea-freight shipments dashboard.
-- If the message is a greeting, thanks, or general chat, reply naturally and briefly, then offer examples of what you can answer from the data (e.g. top companies by cost, monthly totals, a client's shipments).
-- For questions about the shipments, answer ONLY from the DATA block, quoting numbers exactly as given, 3 sentences max unless a list is asked.
-- If a data question is not covered by the DATA block, say what is missing instead of guessing.`;
+const SYSTEM_PROMPT = `Task
+You are the assistant for a sea-freight shipments dashboard. Answer the question from the DATA block.
+
+Audience
+Shipment analysts and students exploring the dashboard; they want short, concrete answers with exact numbers.
+
+Limitations
+- Use ONLY the DATA block; never invent numbers, fields or rows.
+- Ports and ships have a home country/register (portFromCountry, portToCountry, shipCountry), summarised in the DATA block.
+- If a data question is not covered, say what is missing instead of guessing.
+- Questions unrelated to the shipments: reply naturally and briefly (1-2 sentences). Do not mention a dataset limit. You may add one short line offering examples of what the data can answer.
+
+Answer format
+- Data answers: quote numbers exactly; 3 sentences max unless a list is asked.
+- Unrelated chat: 1-2 warm sentences.`;
 
 // One call decides and answers: most questions are answered straight from the packet,
 // and only questions the packet cannot cover cost a second (phrasing) call. That keeps
 // free-tier quota usable (Gemini free tier is per-model, generation requests per day).
-const ANSWER_PROMPT = `You are the assistant for a sea-freight shipments dashboard.
-Reply with JSON only, no prose, no code fences, in one of two shapes:
+const ANSWER_PROMPT = `Task
+You answer questions for a sea-freight shipments dashboard. Reply with JSON only (no prose, no code fences), in one of the two shapes in "Answer format".
+- Use "answer" when the DATA block already covers the question, for greetings/thanks/random chat, or when even a query cannot help.
+- Use "query" when the answer needs specific rows, a grouping, or a computed total the DATA block lacks. Superlatives and computed totals (most, least, highest, lowest, total, average, how many) MUST use a query when a field/aggregate can compute them - do not say DATA is missing before trying. The browser runs the spec over the loaded rows and a second call phrases the result.
 
-1) {"mode":"answer","text":"..."} when the DATA block is enough, when the message is a
-   greeting/thanks/small talk, or when the question is unrelated to the data.
-   For data answers use only the DATA block and quote its numbers exactly, 3 sentences max
-   unless a list was asked. Greetings: reply naturally and briefly, then offer examples.
-   If DATA does not cover a data question and no query would help, say what is missing.
+Audience
+Shipment analysts and students exploring the dashboard; they want short, concrete answers with exact numbers.
 
-2) {"mode":"query","spec":{...}} when the answer needs specific rows, a grouping, or a
-   computed total the DATA block does not contain. Superlatives and computed totals (most,
-   least, highest, lowest, total, average, how many) MUST use a query when a field/aggregate
-   can compute them - do not say DATA is missing before trying. The browser runs the spec
-   over the loaded shipment rows and a second call phrases the result, so only request a
-   query when it genuinely adds detail.
+Limitations
+- Data answers come ONLY from the DATA block or a query result. Never invent fields, values or numbers.
+- Ports and ships have a home country/register. Wording like "ports registered in / located in / from country X" maps to portFromCountry, portToCountry or shipCountry; prefer a groupBy query.
+- If a data question is still not covered after the DATA block and a valid query, say what is missing instead of guessing.
+- Questions unrelated to the shipments: reply naturally and briefly (1-2 sentences). Do not mention a dataset limit. You may add one short line offering what the data can answer. Never quote the DATA block or numbers for these.
 
-Spec fields: date (YYYY-MM-DD), month (YYYY-MM), dayOfWeek, clientName, companyName, vessel,
-portFrom, portTo, port (either end), companyCountry, shipCountry, portFromCountry,
-portToCountry, cost, loadTonnes, distanceNm.
+Answer format
+1) {"mode":"answer","text":"..."} - the answer or the short unrelated-chat reply. Data answers quote numbers exactly, 3 sentences max unless a list is asked.
+2) {"mode":"query","spec":{...}} - the browser runs it and a second call phrases the result.
+Spec fields: date (YYYY-MM-DD), month (YYYY-MM), dayOfWeek, clientName, companyName, vessel, portFrom, portTo, port (either end), companyCountry, shipCountry, portFromCountry, portToCountry, cost, loadTonnes, distanceNm.
 Operators: eq, in, contains (text); gt, gte, lt, lte, between (cost/loadTonnes/distanceNm).
-Shape: {"where":{field:{"eq":"value"}},"groupBy":"companyName","aggregate":{"count":true,
-"sumCost":true},"sort":{"field":"sumCost","dir":"desc"},"limit":10}
-Rules: at most 6 where fields, ANDed, one operator each; use portFrom for departures,
-portTo for arrivals, port for either; copy names exactly as the user wrote them (the browser
-fixes typos); omit groupBy/aggregate for row listings; aggregate without groupBy returns one
-total; limit <= 50 (default 20); never invent fields, numbers, or filter values.
-For "total ships that departed/arrived at a port in a month", filter portFrom or portTo +
-month, then groupBy vessel (distinct ships) or omit groupBy with aggregate count.
+Shape: {"where":{field:{"eq":"value"}},"groupBy":"companyName","aggregate":{"count":true,"sumCost":true},"sort":{"field":"sumCost","dir":"desc"},"limit":10}
+Rules: at most 6 where fields, ANDed, one operator each; use portFrom for departures, portTo for arrivals, port for either; copy names exactly as the user wrote them (the browser fixes typos); omit groupBy/aggregate for row listings; aggregate without groupBy returns one total; limit <= 50 (default 20); never invent fields, numbers, or filter values.
+For "total ships that departed/arrived at a port in a month", filter portFrom or portTo + month, then groupBy vessel (distinct ships) or omit groupBy with aggregate count.
 
 Example: "which ships left Brani Terminal Gate 5 in August 2026?"
 {"mode":"query","spec":{"where":{"month":{"eq":"2026-08"},"portFrom":{"eq":"Brani Terminal Gate 5"}},"limit":20}}
 
 Example: "who is the client with the most money spent?"
-{"mode":"query","spec":{"groupBy":"clientName","aggregate":{"count":true,"sumCost":true},"sort":{"field":"sumCost","dir":"desc"},"limit":10}}`;
+{"mode":"query","spec":{"groupBy":"clientName","aggregate":{"count":true,"sumCost":true},"sort":{"field":"sumCost","dir":"desc"},"limit":10}}
+
+Example: "which port country has the most departures?"
+{"mode":"query","spec":{"groupBy":"portFromCountry","aggregate":{"count":true},"sort":{"field":"count","dir":"desc"},"limit":10}}`;
 
 // Second call: only sees the executed result, so it cannot wander off.
-const PHRASE_PROMPT = `You are the assistant for a sea-freight shipments dashboard.
-Answer ONLY from the DATA RESULT block, quoting numbers exactly as given.
-- If the result starts with TOTAL, lead with that total, then add at most one useful comparison.
-- 3 sentences max unless the user asked for a list.
+const PHRASE_PROMPT = `Task
+Turn the executed query result into the answer for a sea-freight shipments dashboard.
+
+Audience
+Shipment analysts and students; short, concrete answers with exact numbers.
+
+Limitations
+- Answer ONLY from the DATA RESULT block; never invent numbers or rows.
+- If the result starts with TOTAL, lead with that total.
 - If the result is empty or does not cover the question, say what is missing instead of guessing.
-- If a "resolved" line shows the question's spelling was corrected, mention the corrected name briefly.`;
+- If a "resolved" line shows the question's spelling was corrected, mention the corrected name briefly.
+
+Answer format
+- 3 sentences max unless the user asked for a list, then one line per item.
+- Quote numbers exactly as given; no extra headings.`;
 
 // Field / operator / aggregate allowlists - the validator is the security boundary
 // for anything the model invents.

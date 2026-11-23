@@ -1744,7 +1744,12 @@
         'How many shipments are there in total?',
         'Which company has the highest total cost?',
         'Who are the companies for Alice Miller?',
-        'What departed from Port Singapore Pier 9 in September 2026?'
+        'What departed from Port Singapore Pier 9 in September 2026?',
+        'Which country has the most ports?',
+        'Which ship register has the most ships?',
+        'Which ports had the most arrivals?',
+        'What was the largest single shipment, and who shipped it?',
+        'What can you help me with?'
       ];
       const ASK_METRIC_WORDS = /\b(shipments?|costs?|load|tonnes?|distance|ports?|compan(y|ies)|clients?|vessels?|ships?|months?|total|average|avg|highest|top|most|least|revenue|income|departures?|spen[dt]|spending|money|paid|pay)\b/;
 
@@ -1775,6 +1780,17 @@
         .slice(0, limit)
         .map(e => `${e.key} (${e.count} shipments, US$ ${fmtNum(e.cost)})`)
         .join(' ; ');
+
+      // count rows of a dimension table by a label (country, register), for "how many X per Y"
+      function dimCounts(rows, keyFn, unit) {
+        const m = new Map();
+        (rows || []).forEach(r => {
+          const k = String(keyFn(r) || '').trim();
+          if (k) m.set(k, (m.get(k) || 0) + 1);
+        });
+        return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8)
+          .map(([k, n]) => `${k} (${n} ${unit})`).join(' ; ');
+      }
 
       // facts about one matched entity: totals, date range, companies, vessels, routes
       function summarizeRows(rows) {
@@ -1906,6 +1922,11 @@
           'COMPANY COUNTRIES: ' + groupTotals(allRows, r => r.companyCountry)
             .sort((a, b) => b.count - a.count).slice(0, 10)
             .map(e => `${e.key} (${e.count})`).join(' ; '),
+          // ports and ships only have a country via the dimension rows, so aggregate both
+          'PORT COUNTRIES (departures): ' + topBy(allRows, r => r.portFromCountry, 8, 'departures'),
+          'PORT COUNTRIES (arrivals): ' + topBy(allRows, r => r.portToCountry, 8, 'arrivals'),
+          'PORTS BY COUNTRY: ' + dimCounts(data.ports, p => ((p.Port_Address || '').split(',').pop() || '').trim(), 'ports'),
+          'SHIP REGISTERS: ' + dimCounts(data.ships, v => v.Ship_Country_Register, 'ships'),
           'BY WEEKDAY: ' + groupTotals(allRows, r => r.dayOfWeek)
             .sort((a, b) => b.count - a.count)
             .map(e => `${e.key} (${e.count})`).join(' ; ')

@@ -1234,8 +1234,11 @@
       // bucket must clear both the statistical and the relative cutoff to be reported.
       const ANOMALY_Z = 3;
       // aggregates vary less than single days, so each grain gets its own relative cutoff.
-      // Day 30% is where precision and recall both reach 1.00 on data/anomaly-ground-truth.json.
+      // Day spikes stay at 30%: precision and recall both reach 1.00 on data/anomaly-ground-truth.json.
+      // Dips get a lower cutoff: a big shipment lifts income more than a quiet day lowers it, and
+      // 30% hid the one real dip (2026-09-30, -21%, z -5.9).
       const ANOMALY_PCT = { day: 30, week: 12, month: 10 };
+      const ANOMALY_DIP_PCT = { day: 20, week: 12, month: 10 };
       // how many earlier buckets each bucket is compared against
       const ANOMALY_WINDOW = { day: 14, week: 4, month: 3 };
       // the same window in words, for the explanation text
@@ -1308,7 +1311,8 @@
           const z = spread ? 0.6745 * (e.total - base) / spread : (e.total === base ? 0 : Infinity);
           const pct = base ? (e.total - base) / base * 100 : null;
           // both rules must pass: a real relative change and a clear departure from the window
-          if (!(Math.abs(z) >= ANOMALY_Z && pct != null && Math.abs(pct) >= ANOMALY_PCT[grain])) continue;
+          const cutoff = e.total >= base ? ANOMALY_PCT[grain] : ANOMALY_DIP_PCT[grain];
+          if (!(Math.abs(z) >= ANOMALY_Z && pct != null && Math.abs(pct) >= cutoff)) continue;
 
           const windowCount = median(win.map(([, x]) => x.count));
           const windowCompanies = median(win.map(([, x]) => companiesIn(x)));
@@ -1485,9 +1489,11 @@
           listEl.innerHTML = `<div class="empty">At least ${ANOMALY_WINDOW[anomalyGrain] + 1} ${unit}s of shipments are needed to compare with the previous ${lookback}.</div>`;
           return;
         }
-        summary.textContent = `${items.length} found · vs previous ${lookback} · ≥ ${ANOMALY_Z}σ and ±${ANOMALY_PCT[anomalyGrain]}%`;
+        const upPct = ANOMALY_PCT[anomalyGrain];
+        const downPct = ANOMALY_DIP_PCT[anomalyGrain];
+        summary.textContent = `${items.length} found · vs previous ${lookback} · ≥ ${ANOMALY_Z}σ · up ${upPct}% / down ${downPct}%`;
         if (!items.length) {
-          listEl.innerHTML = `<div class="empty">No ${unit} differs from the previous ${lookback} by both ${ANOMALY_Z}σ and ±${ANOMALY_PCT[anomalyGrain]}%. Boundary periods at the start and end of the data are excluded.</div>`;
+          listEl.innerHTML = `<div class="empty">No ${unit} differs from the previous ${lookback} by ${ANOMALY_Z}σ and at least ${upPct}% up or ${downPct}% down. Boundary periods at the start and end of the data are excluded.</div>`;
           return;
         }
 
